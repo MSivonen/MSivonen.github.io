@@ -9,6 +9,6 @@ This simulation is based on circle-circle 2d elastic collision simulation. I've 
 
 Play around with the sliders and it's guaranteed to go fubar. See the 'wip' in the title...
 
-I got this idea from a [youtube video](https://www.youtube.com/watch?v=xKEFlg_JMmU) that I saw some time ago, and I decided to make ~~a shameless copy~~ my own version.
+I got this idea from a [youtube video](https://www.youtube.com/watch?v=xKEFlg_JMmU) that I saw some time ago, and I decided to make ~~a shameless copy~~ my own version of it.
 
 ---
