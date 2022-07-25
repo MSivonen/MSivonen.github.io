@@ -1,39 +1,12 @@
+## Here's some stuff that I've made.
+
+### Fire Simulation wip
+This simulation is based on circle-circle 2d elastic collision simulation. I've added a temperature property to the particles. Hotter particles have less weight than colder ones (mass doesn't change by weight). Hot enough and the weight is negative. At the bottom there's a heater that heats nearby particles. Particles also conduct heat to each other and their heat decays over time.
+
+Play around with the sliders and it's guaranteed to go fubar. See the 'wip' in the title...
+
+I got this idea from a [youtube video](https://www.youtube.com/watch?v=xKEFlg_JMmU) that I saw some time ago, and I decided to make my own version. No code is borrowed or stolen.
+
 [Fire simulation](https://msivonen.github.io/firesim/index.html)
-
-## Welcome to GitHub Pages
-
-You can use the [editor on GitHub](https://github.com/MSivonen/MSivonen.github.io/edit/main/index.md) to maintain and preview the content for your website in Markdown files.
-
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
-
-### Markdown
-
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
-
-```markdown
-Syntax highlighted code block
-
-# Header 1
-## Header 2
-### Header 3
-
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
-```
-
-For more details see [Basic writing and formatting syntax](https://docs.github.com/en/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/MSivonen/MSivonen.github.io/settings/pages). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://docs.github.com/categories/github-pages-basics/) or [contact support](https://support.github.com/contact) and we’ll help you sort it out.
+![Fire simulation preview](https://msivonen.github.io/firesim_preview.jpg)
+[p5.js is used](https://p5js.org/)
