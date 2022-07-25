@@ -7,6 +7,8 @@ Play around with the sliders and it's guaranteed to go fubar. See the 'wip' in t
 
 I got this idea from a [youtube video](https://www.youtube.com/watch?v=xKEFlg_JMmU) that I saw some time ago, and I decided to make my own version. No code is borrowed or stolen.
 
-[Fire simulation](https://msivonen.github.io/firesim/index.html)</br>
-![Fire simulation preview](https://msivonen.github.io/firesim_preview.jpg)</br>
-[p5.js is used](https://p5js.org/)</br>
+[Fire simulation](https://msivonen.github.io/firesim/index.html)
+
+![Fire simulation preview](https://msivonen.github.io/firesim_preview.jpg)
+
+[p5.js is used](https://p5js.org/)
