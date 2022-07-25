@@ -11,6 +11,4 @@ Play around with the sliders and it's guaranteed to go fubar. See the 'wip' in t
 
 I got this idea from a [youtube video](https://www.youtube.com/watch?v=xKEFlg_JMmU) that I saw some time ago, and I decided to make my own version. No code is borrowed or stolen.
 
-[Go to Fire simulation](https://msivonen.github.io/firesim/index.html)
-
 ---
