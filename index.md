@@ -1,5 +1,6 @@
 ## Here's some stuff that I've made.
 
+---
 
 ### Fire Simulation wip
 [![Fire simulation preview](https://msivonen.github.io/firesim_preview.jpg)
