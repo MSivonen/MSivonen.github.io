@@ -3,7 +3,7 @@
 ---
 
 ### Fire Simulation wip
-[![Fire simulation preview](https://msivonen.github.io/firesim_preview.jpg)  Go to Fire simulation](https://msivonen.github.io/firesim/index.html)
+[![Fire simulation preview](https://msivonen.github.io/firesim_preview.jpg)<br/>Go to Fire simulation](https://msivonen.github.io/firesim/index.html)
 
 This simulation is based on circle-circle 2d elastic collision simulation. I've added a temperature property to the particles. Hotter particles have less weight (not mass) than colder ones. Hot enough and the weight is negative. At the bottom there's a heater that heats nearby particles. Particles also conduct heat to each other and their heat decays over time.
 
