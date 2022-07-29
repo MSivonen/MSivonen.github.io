@@ -10,7 +10,7 @@ const
     r = 2; //particle size;
 
 function setup() {
-    frameRate(60);
+    frameRate(60000);
     rectMode(CENTER);
     canv = createCanvas(w, h);
     canv.mouseClicked(() => isCircle = !isCircle);
