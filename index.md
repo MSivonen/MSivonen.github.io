@@ -12,3 +12,12 @@ Play around with the sliders and it's guaranteed to go fubar. See the 'wip' in t
 I got this idea from a [youtube video](https://www.youtube.com/watch?v=xKEFlg_JMmU) that I saw some time ago, and I decided to make ~~a shameless copy~~ my own version of it...
 
 ---
+
+### Quad tree
+[![Quad tree preview](https://msivonen.github.io/quadTree_preview.jpg)<br/>Go to Quad tree](https://msivonen.github.io/quadTree/index.html)
+
+Check interactions between points, only if they are inside a specified range.
+This is a simple example; check if the circles overlap inside the big circle/rectangle.
+Yes, I know my circles have sharp edges. That's to improve performance.
+Made by following this [tutorial](https://www.youtube.com/watch?v=OJxEcs0w_kE).<br/>
+Thank you Daniel!
