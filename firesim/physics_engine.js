@@ -5,15 +5,15 @@ let balls = [], //array for particles
     range,
 
     //paste settings here:
-    maxTemp = 9.3,
+    maxTemp = 12.6,
     minTemp = 0.1,
     tempDecay = 0.048,//how fast temperature drops over time
-    tempConductionSpeed = 1.5,//temp conduction between particles
+    tempConductionSpeed = 1.9,//temp conduction between particles
     tempGravityMult  = 0.8,//how much temp affects weight of particles (not mass)
     blurAmount  = 10.6,
-    heatWidth  = 0.66,
-    heatAmount = 0.34,
-    sparkTemp = 2.45,//particles near this temperature will be brighter
+    heatWidth  = 0.29,
+    heatAmount = 0.324,
+    sparkTemp = 3.2,//particles near this temperature will be brighter
     blurOn = "Blur off";
 
 let calc = new Vec(0, 0);
