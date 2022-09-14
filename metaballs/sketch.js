@@ -1,6 +1,6 @@
-const w = 300, h = 300,
+const w = 600, h = 600,
     fps = 50,
-    resolution = 5;
+    resolution = 10;
 
 let calc = new Vec();
 
@@ -51,13 +51,13 @@ class Pixel {
         for (const b of blobs) {
             sum += calc.dist(this.pos, b.pos);
         }
-        return 5000 / (sum / blobs.length);
+        return 10000 / (sum / blobs.length);
     }
 
 }
 
 let blobs = [];
-for (let i = 0; i < 3; i++)blobs.push(new Blob(Math.random() * w, Math.random() * h));
+for (let i = 0; i < 5; i++)blobs.push(new Blob(Math.random() * w, Math.random() * h));
 
 
 background("black");
