@@ -1,6 +1,6 @@
-const w = 600, h = 600,
+const w = 400, h = 400,
     fps = 50,
-    resolution = 10;
+    resolution = 4;
 
 let calc = new Vec();
 
@@ -40,7 +40,7 @@ class Pixel {
 
     show() {
         let tempCol=this.updateColor()
-        this.col = `rgba(${tempCol-255},${tempCol},${tempCol-1355},1)`
+        this.col = `rgba(0,${tempCol},0,1)`
         ctx.fillStyle = this.col;
         ctx.strokeWeight = 0;
         ctx.fillRect(this.pos.x, this.pos.y, resolution, resolution);
@@ -49,9 +49,9 @@ class Pixel {
     updateColor() {
         let sum = 0;
         for (const b of blobs) {
-            sum += calc.dist(this.pos, b.pos);
+            sum += 1 / calc.dist(this.pos, b.pos);
         }
-        return 10000 / (sum / blobs.length);
+        return 5000*sum;
     }
 
 }
