@@ -1,5 +1,6 @@
 const w = 300, h = 300,
-    fps = 50;
+    fps = 50,
+    gravity = 0.01;
 
 let calc = new Vec();
 
@@ -27,6 +28,8 @@ class Blob {
     updatePos() {
         if (this.pos.x > w || this.pos.x < 0) this.vel.x *= -1;
         if (this.pos.y > h || this.pos.y < 0) this.vel.y *= -1;
+        this.acc.y += gravity;
+        this.vel = calc.add(this.vel, this.acc);
         this.pos = calc.add(this.vel, this.pos);
         this.acc.set(0, 0);
     }
