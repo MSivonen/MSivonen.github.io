@@ -19,5 +19,10 @@ I got this idea from a [youtube video](https://www.youtube.com/watch?v=xKEFlg_JM
 Check interactions between points, only if they are inside a specified range.
 This is a simple example; check if the circles overlap inside the big circle/rectangle.
 Yes, I know my circles have sharp edges. That's to improve performance.
-Made by following this [tutorial](https://www.youtube.com/watch?v=OJxEcs0w_kE).<br/>
-Thank you Daniel!
+
+---
+
+### Metaballs
+[![Metaballs preview](https://msivonen.github.io/metaballs_preview.jpg)<br/>Go to Metaballs](https://msivonen.github.io/metaballs/index.html)
+
+I thought of adding this to my fire sim, but didn't. It's pretty, so go take a look.
