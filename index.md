@@ -26,3 +26,10 @@ Yes, I know my circles have sharp edges. That's to improve performance.
 [![Metaballs preview](https://msivonen.github.io/metaballs_preview.jpg)<br/>Go to Metaballs](https://msivonen.github.io/metaballs/index.html)
 
 I thought of adding this to my fire sim, but didn't. It's pretty, so go take a look.
+
+---
+
+### Raycasting
+[!Raycasting preview](https://msivonen.github.io/raycasting_preview.jpg)<br/>Go to Raycasting(https://msivonen.github.io/raycasting/index.html)
+
+Simple raycasting demo
