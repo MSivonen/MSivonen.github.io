@@ -30,6 +30,6 @@ I thought of adding this to my fire sim, but didn't. It's pretty, so go take a l
 ---
 
 ### Raycasting
-[!Raycasting preview](https://msivonen.github.io/raycasting_preview.jpg)<br/>Go to Raycasting](https://msivonen.github.io/raycasting/index.html)
+[![Raycasting preview](https://msivonen.github.io/raycasting_preview.jpg)<br/>Go to Raycasting](https://msivonen.github.io/raycasting/index.html)
 
 Simple raycasting demo
