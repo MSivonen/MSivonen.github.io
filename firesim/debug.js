@@ -3,6 +3,9 @@ let fpsText;
 function makeSliders() {
     let sliderpos = height + 25;
 
+    createP("These are debug sliders. Expect to find bugs if you fiddle with them...").position(30, sliderpos + 9);
+    sliderpos += 30;
+
     createP("Wind").position(250, sliderpos + 9);
     windSlider = createSlider(-0.15, 0.15, wind, 0.01);
     windSlider.position(20, sliderpos += 25); //notice the += here
@@ -54,10 +57,15 @@ function makeSliders() {
     blurAmountSlider.position(20, sliderpos += 25);
     blurAmountSlider.style("width", "200px");
 
-    blurRadio = createRadio().position(20, sliderpos += 25);;
+    blurRadio = createRadio("blur").position(20, sliderpos += 25);;
     blurRadio.option("Blur on");
     blurRadio.option("Blur off");
     blurRadio.selected(blurOn);
+
+    bgRadio = createRadio("bg").position(20, sliderpos += 25);;
+    bgRadio.option("Black background");
+    bgRadio.option("Blue background");
+    bgRadio.selected("Black background");
 
     saveButton = createButton("Output settings to log").position(20, sliderpos += 25);
     saveButton.mousePressed(saveSettings);
@@ -78,7 +86,8 @@ function saveSettings() {
         "heatWidth  = " + heatWidth + ",\n" +
         "heatAmount = " + heatAmount + ",\n" +
         "sparkTemp = " + sparkTemp + ",//particles near this temperature will be brighter\n" +
-        "blurOn = \"" + blurOn + "\";");
+        "blurOn = \"" + blurOn + "\",\n" +
+        "blueBG = " + blueBG + ";");
 }
 
 function updateSliders() {
@@ -93,6 +102,7 @@ function updateSliders() {
     heatAmount = heatAmountSlider.value();
     heatWidth = -heatWidthSlider.value();
     blurOn = blurRadio.value();
+    blueBG = bgRadio.value() == "Black background" ? false : true;
     fpsText.html("FPS: " + frameRate().toFixed(0));
     stroke(255);
     let tempY = 5;

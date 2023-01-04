@@ -1,11 +1,12 @@
-let balls = [], //array for particles
+let
+    balls = [], //array for particles
     ctx,
     qt,
     range,
     pixels = [],
 
 
-    //paste settings here:
+    //paste settings from log here:
     wind = 0,
     maxTemp = 8.6,
     minTemp = 0.1,
@@ -16,11 +17,13 @@ let balls = [], //array for particles
     heatWidth = 0.29,
     heatAmount = 0.108,
     sparkTemp = 2.95,//particles near this temperature will be brighter
-    blurOn = "Blur off";
+    blurOn = "Blur off",
+    blueBG = false;
 
 let calc = new Vec(0, 0);
 
-const cos = Math.cos,
+const
+    cos = Math.cos,
     sin = Math.sin,
     gravity = 0.08,
     amountOfBalls = 1000,
@@ -28,20 +31,16 @@ const cos = Math.cos,
     w = 350, //canvas size
     h = 600,
     r = 5, //particle size
-    gridSizeX = Math.floor(w / (r * 2.1)) + 1, //don't interact with particles further than this
-    gridSizeY = Math.floor(h / (r * 2.1)) + 1,
     debug = true; //enable sliders and etc stuff
 
 
 function setup() {
     frameRate(600);
     rectMode(CENTER);
-    //createCanvas(w, h, WEBGL);
     createCanvas(w, h);
     ctx = document.getElementById("defaultCanvas0").getContext("2d");
     img = ctx.createImageData(w, h);
     makeBalls(amountOfBalls);
-    //makePixels(w, h);
     if (debug) {
         makeSliders();
         // testBall1 = new Ball(100, 150, 1, [125, 125, 125], 20, 0, 0);
@@ -53,21 +52,20 @@ function setup() {
 
 function draw() {
     drawingContext.shadowBlur = 0;
-    background('rgba(0,0,0,0.15)');
-    //translate(-width/2,-height/2,0);
-    //fillGrid();
+    if (blueBG)
+        background('rgba(0,0,50,0.15)');
+    else
+        background('rgba(0,0,0,0.15)');
 
-
-    qt = new QuadTree(new Rectangle(w / 2, h / 2, w / 2, h / 2), 40);
+    qt = new QuadTree(new Rectangle(w / 2, h / 2, w / 2, h / 2), 20);
     balls.forEach(ball => {
         qt.insert(ball);
     });
-
-
+    //qt.show();
 
     balls.forEach(ball => {
         range = new Rectangle(ball.pos.x, ball.pos.y, ball.r * 2, ball.r * 2);
-        let queryBalls = qt.query(range);
+        const queryBalls = qt.query(range);
         queryBalls.forEach(other => {
             if (ball != other) ball.collision(other);
         });
@@ -83,24 +81,13 @@ function draw() {
         ball.draw();
     });
 
-    /*     for (let y = 0; y < h; y++) {
-            for (let x = 0; x < w; x++) {
-                pixels[y][x].draw(4 * (w * y + x));
-            }
-        }
-        ctx.putImageData(img, 0, 0); */
-
-
-    fill(255, 0, 0, 100);
-    // drawingContext.filter = `blur(${blurAmount}px)`;
+    //draw heater
     ctx.fillStyle = "rgba(100, 50, 0, 0.8)";
-    /*  */rect((width / 2), height + 10, width * (1 - heatWidth), 30, 10);
+    rect((width / 2), height + 10, width * (1 - heatWidth), 30, 10);
+
     if (debug) {
         updateSliders();
-        //text(Math.floor(getFrameRate()), 200, 10);
         //  testBalls();
     }
-
-    //qt.show();
 }
 

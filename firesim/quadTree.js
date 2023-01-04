@@ -1,3 +1,5 @@
+//Thank you Daniel Shiffman for tutorial https://www.youtube.com/watch?v=OJxEcs0w_kE&t=692s
+
 class QuadTree {
     constructor(boundary_, cap_) {
         this.boundary = boundary_;
@@ -14,7 +16,6 @@ class QuadTree {
             if (!this.divided) {
                 this.subdivide();
             }
-            //for (const d of [this.ne, this.nw, this.se, this.sw])
             this.ne.insert(point);
             this.nw.insert(point);
             this.se.insert(point);

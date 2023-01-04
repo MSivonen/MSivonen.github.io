@@ -1,5 +1,3 @@
-
-
 function inf(num) {
     return (num == Infinity ? true : false);
 }
@@ -17,15 +15,6 @@ function makeBalls(amount) {
             , 0//(-.5 + Math.random()) * 2 //vel x
             , 0//(-.5 + Math.random()) * 2 //vel y
         ));
-    }
-}
-
-function makePixels(w_, h_) {
-    for (let y = 0; y < h_; y++) {
-        pixels.push([]);
-        for (let x = 0; x < w_; x++) {
-            pixels[y].push(new Pixel(x, y, 255 * Math.random()));
-        }
     }
 }
 
