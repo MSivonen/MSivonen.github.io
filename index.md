@@ -38,6 +38,6 @@ Simple raycasting demo. wsad to move.
 
 
 
-
+---
 See the source code of all of these:
 https://github.com/MSivonen/MSivonen.github.io
