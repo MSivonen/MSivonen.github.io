@@ -1,0 +1,183 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #15202B; /* Dark blue background */
+    color: #FFFFFF; /* White text */
+    animation: rotatePage 1200s ease-in-out infinite alternate; /* Rotate page animation */
+}
+
+@keyframes rotatePage {
+    0% {
+        transform: rotate(0deg);
+    }
+    40% {
+        transform: rotate(0deg);
+    }
+    50% {
+        transform: rotate(-2deg);
+    }	
+    100% {
+        transform: rotate(5deg);
+    }
+}
+
+.container {
+    max-width: 600px;
+    margin: 25px auto;
+    padding: 20px;
+    border-radius: 10px;
+    background-color: #1C2938; /* Darker blue container */
+    box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.3); /* Box shadow */
+    animation: fadeIn 0.5s ease; /* Fade-in animation */
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 0;
+}
+
+.input-container {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+    animation: slideInLeft 0.5s ease; /* Slide-in animation */
+}
+
+@keyframes slideInLeft {
+    from {
+        transform: translateX(-50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+#link-input {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    margin-right: 10px;
+    background-color: #30404D; /* Dark gray input background */
+    color: #FFFFFF; /* White text */
+}
+
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 20px; /* Round button shape */
+    font-size: 16px;
+    cursor: pointer;
+    color: #FFFFFF; /* White text */
+    background-color: #FFA500; /* Orange button background */
+    transition: background-color 0.3s ease; /* Smooth transition */
+    animation: fadeIn 0.5s ease; /* Fade-in animation */
+}
+
+button:hover {
+    animation: pulse 0.5s infinite alternate; /* Pulse animation on hover */
+    background-color: #FFD700; /* Lighter orange on hover */
+}
+
+@keyframes pulse {
+    from {
+        transform: scale(1);
+    }
+    to {
+        transform: scale(1.1);
+    }
+}
+
+button:focus {
+    outline: none; /* Remove button outline */
+}
+
+.result-area {
+    margin-top: 20px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background-color: #30404D; /* Dark gray result background */
+    min-height: 25px; /* Set a minimum height */
+    overflow-y: auto; /* Add vertical scroll if content exceeds height */
+    display: flex; /* Use flexbox */
+    justify-content: center; /* Center horizontally */
+    align-items: center; /* Center vertically */
+}
+
+.result-number {
+    font-size: 16px;
+    text-align: center;
+    margin: 5px 0;
+    opacity: 0; /* Initially hidden */
+    animation: dropDown 0.4s forwards, rotate 0.4s ease; /* Drop down and rotate animations */
+}
+
+@keyframes dropDown {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes rotate {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.infoContainer {
+    max-width: 580px;
+    margin: 5px auto;
+    padding: 12px;
+    border-radius: 10px;
+    background-color: #1C2938; /* Darker blue container */
+    box-shadow: 0px 0px 6px rgba(0, 0, 0, 0.3); /* Box shadow */
+    animation: fadeIn 0.5s ease; /* Fade-in animation */
+    font-size: 12px;
+    color: #aaaaaa; 
+}
+
+a:link {
+  color: pink;
+  background-color: transparent;
+  text-decoration: none;
+}
+
+a:visited {
+  color: pink;
+  background-color: transparent;
+  text-decoration: none;
+}
+
+a:hover {
+  color: yellow;
+  background-color: transparent;
+  text-decoration: underline;
+}
+
+a:active {
+  color: yellow;
+  background-color: transparent;
+  text-decoration: underline;
+}
