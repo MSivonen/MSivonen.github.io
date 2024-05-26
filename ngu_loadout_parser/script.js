@@ -2,7 +2,7 @@ async function parseLink(url) {
     const start = url.indexOf("loadout/") + "loadout/".length;
     const numbersStr = url.substring(start);
     let result = numbersStr.replace(/&/g, ",");
-    if (!result.split(",").includes("136")) {
+    if (!result.split(",").includes("136") && document.getElementById('RoG').checked) {
         result += ",136";
     }
     let resultA = result.split(","); // Return an array of numbers
