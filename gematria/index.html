@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Netscape editor default title</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Comic Sans MS';
+            background-color: #f3f3f3;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-image: url('stars.png');
+        }
+
+        h1 {
+            color: #15df26;
+            margin-bottom: 15px;
+        }
+
+        output {
+            color: #df1515;
+            font-size: 1.4em;
+
+            display: block;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        label,
+        input[type="radio"] {
+            color: #c1df15;
+            font-size: 1.4em;
+
+            display: inline-flex;
+            align-items: center;
+        }
+
+        button {
+            font-family: 'Comic Sans MS';
+            display: inline-block;
+            vertical-align: middle;
+            font-size: 1.2em;
+        }
+
+        #resultText {
+            color: #ff00dd;
+            text-align: center;
+            font-size: 1.4em;
+        }
+    </style>
+
+    <script>
+        window.onload = function () {
+            document.getElementById('resultBtn').addEventListener('click', function () {
+                var resultText = document.getElementById('resultText');
+                var input1 = document.getElementById('input1').value.toUpperCase();
+                var input2 = document.getElementById('input2').value.toUpperCase();
+                var sum1 = 0, sum2 = 0;
+
+                for (var i = 0; i < input1.length; i++) {
+                    if (input1[i] >= 'A' && input1[i] <= 'Z') {
+                        sum1 += Number(input1[i].charCodeAt(0) - 64);
+                    }
+                }
+
+                sum1 %= 10000;
+                document.getElementById('output1').value = sum1;
+
+                for (var i = 0; i < input2.length; i++) {
+                    if (input2[i] >= 'A' && input2[i] <= 'Z') {
+                        sum2 += Number(input2[i].charCodeAt(0) - 64);
+                    }
+                }
+
+                sum2 %= 10000;
+
+                document.getElementById('output2').value = sum2;
+
+                let trueText = document.getElementById('resultTrue').checked ? "true" : "false";
+                let sumText = sum1 === sum2 ? "" : "don't";
+                let primes = findPrimeSum(sum1);
+                resultText.innerHTML = "The numbers " + sumText + " match, that proves the calculated result is " + trueText + ".";
+                if (primes)
+                    resultText.innerHTML += "</br>Also the number " + sum1 + " is a sum of two primes: " + primes.firstPrime + " + " + primes.secondPrime + ".</br>";
+                else
+                    resultText.innerHTML += "</br>Also the number " + sum1 + " is a prime.</br>";
+
+
+                let trueEnemy =
+                    document.getElementById('enemyNasa').checked ? "Nasa" :
+                        document.getElementById('enemyThem').checked ? "Them" :
+                            document.getElementById('enemyOtherInput').value;
+                resultText.innerHTML += "That cannot be a coincidence.</br>";
+                let maybe = document.getElementById('resultTrue').checked ? "" : "not";
+                resultText.innerHTML += "This is therefore proven " + maybe + " to be a conspiracy of " + trueEnemy + ".";
+
+                console.log(primes);
+
+
+
+            });
+        }
+
+        function isPrime(num) {
+            if (num <= 1) return false;
+            if (num === 2) return true;
+            if (num % 2 === 0) return false;
+            for (let i = 3; i <= Math.sqrt(num); i += 2) {
+                if (num % i === 0) return false;
+            }
+            return true;
+        }
+        function findPrimeSum(result) {
+            let primes = [];
+            let primeCandidates = [2, 3];
+
+            for (let i = 5; i <= result; i += 2) {
+                if (isPrime(i)) {
+                    primeCandidates.push(i);
+                }
+            }
+
+            primeCandidates.sort((a, b) => a - b);
+
+            for (let i = 0; i < primeCandidates.length; i++) {
+                let firstPrime = primeCandidates[i];
+                for (let j = i + 1; j < primeCandidates.length; j++) {
+                    let secondPrime = primeCandidates[j];
+                    if (firstPrime + secondPrime === result) {
+                        return { firstPrime, secondPrime };
+                    }
+                }
+            }
+
+            return false;
+        }
+
+    </script>
+</head>
+
+<body>
+    <background-image="stars.png"></background-image>
+        <h1>Gematria Calculation with SCIENTIFIC METHOD</h1>
+
+        <div>
+            <label for="resultTrue">Choose your enemy:</label></br>
+            <input type="radio" name="enemy" id="enemyNasa" value="true" checked="true">
+            <label for="resultTrue">Nasa</label></br>
+            <input type="radio" name="enemy" id="enemyThem" value="false">
+            <label for="resultFalse">Them</label></br>
+            <input type="radio" name="enemy" id="enemyOther" value="false">
+            <label for="resultFalse">Other: </label>
+            <input type="text" id="enemyOtherInput"></br></br></br>
+
+        </div>
+
+        <div>
+            <label for="resultTrue">Desired Result:</label>
+            <input type="radio" name="answer" id="resultTrue" value="true" checked="true">
+            <label for="resultTrue">True</label>
+            <input type="radio" name="answer" id="resultFalse" value="false">
+            <label for="resultFalse">False</label>
+        </div>
+
+        <br>
+        <div style="display: flex;">
+            <div>
+                <label for="input1">Phrase 1:</label></br>
+                <input type="text" id="input1">
+                <output id="output1"></output>
+
+            </div>
+            <div style="margin-left: 20px;">
+                <label for="input2">Phrase 2:</label></br>
+                <input type="text" id="input2">
+                <output id="output2"></output>
+
+            </div>
+        </div>
+        <br>
+        <br>
+        <button id="resultBtn">Calculate</button>
+        <br>
+        <br>
+        <div id="resultText"></div>
+
+</body>
+
+</html>
