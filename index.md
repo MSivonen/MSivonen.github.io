@@ -39,7 +39,7 @@ Simple raycasting demo. wsad to move.
 ---
 
 ### Pi from random angles
-[![Random PI preview](https://msivonen.github.io/randompi.jpg)<br/>Go to Random Pi(https://msivonen.github.io/Random_Pi/index.html)
+[![Random PI preview](https://msivonen.github.io/randompi.jpg)<br/>Go to Random Pi](https://msivonen.github.io/Random_Pi/index.html)
 
 Pi calculated from random angles. Creates random lines with same length and startpoint. Connects the ends to make a polygon to fit inside a circle (red). Makes tangent lines (green) touching the circle at those points. Calculates the intersection points of adjacent tangent lines, and connects those points to make a polygon to fit outside the circle (blue). Calculate the circumference of those blah blah blah, you already guessed it by now.
 Mouse click with/out shift and/or control, to add points.
