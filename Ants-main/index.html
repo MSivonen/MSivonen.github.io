@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Sketch</title>
+
+    <link rel="stylesheet" type="text/css" href="style.css">
+
+    <script src="libraries/p5.min.js"></script>
+    <script src="libraries/p5.sound.min.js"></script>
+  </head>
+
+  <body>
+    <script src="sketch.js"></script>
+    <button onclick="togglePauseResume()">Toggle Pause/Resume</button>
+    <p id="status">Status: Running</p>
+
+    <script>
+        var isRunning = true;
+        function togglePauseResume(){
+            if(isRunning){
+                noLoop(); // This is a placeholder for your pause function. Implement it accordingly in JavaScript.
+                document.getElementById('status').innerHTML = "Status: Paused";
+            } else {
+                loop(); // This is a placeholder for your resume function. Implement it accordingly in JavaScript.
+                document.getElementById('status').innerHTML = "Status: Running";
+            }
+            isRunning = !isRunning;
+        }
+    </script>
+  </body>
+</html>
