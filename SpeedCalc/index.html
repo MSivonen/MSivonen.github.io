@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Speed Calculator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2em;
+            font-size: 1.3em;
+            /* 30% bigger */
+        }
+
+        table {
+            border-collapse: collapse;
+            margin-top: 1em;
+            /* Initial rotation is 0deg, will be animated by JS */
+            transform: rotate(0deg);
+            transition: transform 0.1s linear;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 0.65em 1.3em;
+            /* 30% bigger */
+            text-align: center;
+            background: #f5f5f5;
+            /* Light grey background */
+        }
+
+        td:first-child {
+            font-weight: bold;
+            /* Bold the distance numbers */
+        }
+
+        input[type="number"],
+        input[type="text"] {
+            width: 111px;
+            /* 104px * 1.07 ≈ 111px, 7% bigger */
+            border: 1px solid #ccc;
+            background: white;
+            outline: none;
+            box-sizing: border-box;
+            border-radius: 0;
+            font-family: inherit;
+            font-size: 1em;
+            padding: 0.65em 1.3em;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Vauhtilaskuri</h1>
+    <p>Kirjoita jonkin matkan aika, jonka perusteella lasketaan teoreettinen aika muille matkoille:</p>
+    <table id="wobbly-table">
+        <thead>
+            <tr>
+                <th>Matka (m)</th>
+                <th>Aika (s)</th>
+                <th>Nopeus (m/s)</th>
+            </tr>
+        </thead>
+        <tbody id="calc-table">
+            <tr>
+                <td>280</td>
+                <td><input type="text" id="time-280"></td>
+                <td><input type="text" id="speed-input"></td>
+            </tr>
+            <tr>
+                <td>350</td>
+                <td><input type="text" id="time-350"></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td>480</td>
+                <td><input type="text" id="time-480" value="31,99"></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td>680</td>
+                <td><input type="text" id="time-680"></td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
+    <div style="margin-top:2em; text-align:left;">
+        <img src="Sk9uo201.svg" alt="SVG illustration" style="max-width:200px; width:100%; height:auto;">
+    </div>
+    <script>
+        const distances = [280, 350, 480, 680];
+        const startTime = Date.now();
+
+        function parseLocaleNumber(str) {
+            return parseFloat(str.replace(',', '.'));
+        }
+
+        function updateFromInput(changedDist) {
+            const time = parseLocaleNumber(document.getElementById(`time-${changedDist}`).value);
+            if (!time || time <= 0) return;
+
+            const speed = changedDist / time;
+            document.getElementById('speed-input').value = speed.toFixed(2);
+
+            distances.forEach(dist => {
+                const t = (dist / speed).toFixed(2);
+                document.getElementById(`time-${dist}`).value = dist === changedDist ? document.getElementById(`time-${dist}`).value : t;
+            });
+        }
+
+        function updateFromSpeed() {
+            const speed = parseLocaleNumber(document.getElementById('speed-input').value);
+            if (!speed || speed <= 0) return;
+
+            distances.forEach(dist => {
+                document.getElementById(`time-${dist}`).value = (dist / speed).toFixed(2);
+            });
+        }
+
+        distances.forEach(dist => {
+            document.getElementById(`time-${dist}`).addEventListener('input', () => updateFromInput(dist));
+        });
+        document.getElementById('speed-input').addEventListener('input', updateFromSpeed);
+
+        // Calculate on page load using the 480m value
+        window.addEventListener('DOMContentLoaded', () => {
+            updateFromInput(480);
+
+            // Animate table rotation
+            const table = document.getElementById('wobbly-table');
+            const period = 40000; // 20 seconds
+            const maxDeg = 1.4;
+            function animate() {
+                const angle = maxDeg * 0.5 * (1 + Math.sin((2 * Math.PI * performance.now()) / period - Math.PI / 2));
+                table.style.transform = `rotate(${angle}deg)`;
+                requestAnimationFrame(animate);
+            }
+            animate();
+        });
+    </script>
+</body>
+
+</html>
