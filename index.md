@@ -48,7 +48,7 @@ Made with help of AI, because I suck at math and I was lazy.
 ---
 
 ### Nuclear reactor
-[![Random PI preview](https://msivonen.github.io/nucular.png)<br/>Go to Nuclear Reactor](https://msivonen.github.io/Random_Pi/index.html)
+[![Nuclear reactor preview](https://msivonen.github.io/nucular.png)<br/>Go to Nuclear Reactor](https://msivonen.github.io/Nuclear_reactor_glsl/index.html)
 
 Nuclear reactor. A gpu<->cpu communication test.
 
