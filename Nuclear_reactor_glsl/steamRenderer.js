@@ -1,13 +1,14 @@
-// GPU instanced renderer for uranium atoms
-class AtomsRenderer {
+// GPU instanced renderer for steam (water cells)
+class SteamRenderer {
     constructor() {
         this.gl = null;
         this.program = null;
         this.vao = null;
         this.instanceBuffer = null;
         this.maxInstances = 0;
-        this.instanceFloatCount = 8; // x,y, r,g,b,a, size, flash
+        this.instanceFloatCount = 5; // x,y, sizeX,sizeY, alpha
         this.instanceData = null;
+        this.lastCount = 0;
     }
 
     init(simGL, maxInst, vsSource, fsSource) {
@@ -16,11 +17,10 @@ class AtomsRenderer {
         this.maxInstances = maxInst || 2048;
         this.instanceData = new Float32Array(this.maxInstances * this.instanceFloatCount);
         if (!vsSource || !fsSource) {
-            throw new Error('atomsRenderer shader sources missing');
+            throw new Error('steamRenderer shader sources missing');
         }
         this.program = createProgram(this.gl, vsSource, fsSource);
 
-        // Quad (6 verts)
         const quad = new Float32Array([
             -0.5, -0.5,
             0.5, -0.5,
@@ -43,29 +43,20 @@ class AtomsRenderer {
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.instanceBuffer);
         this.gl.bufferData(this.gl.ARRAY_BUFFER, this.instanceData.byteLength, this.gl.DYNAMIC_DRAW);
 
-        // a_instPos (location 1) vec2
         let offset = 0;
         this.gl.enableVertexAttribArray(1);
         this.gl.vertexAttribPointer(1, 2, this.gl.FLOAT, false, this.instanceFloatCount * 4, offset);
         this.gl.vertexAttribDivisor(1, 1);
         offset += 2 * 4;
 
-        // a_instColor (location 2) vec4
         this.gl.enableVertexAttribArray(2);
-        this.gl.vertexAttribPointer(2, 4, this.gl.FLOAT, false, this.instanceFloatCount * 4, offset);
+        this.gl.vertexAttribPointer(2, 2, this.gl.FLOAT, false, this.instanceFloatCount * 4, offset);
         this.gl.vertexAttribDivisor(2, 1);
-        offset += 4 * 4;
+        offset += 2 * 4;
 
-        // a_instSize (location 3) float
         this.gl.enableVertexAttribArray(3);
         this.gl.vertexAttribPointer(3, 1, this.gl.FLOAT, false, this.instanceFloatCount * 4, offset);
         this.gl.vertexAttribDivisor(3, 1);
-        offset += 1 * 4;
-
-        // a_instFlash (location 4) float
-        this.gl.enableVertexAttribArray(4);
-        this.gl.vertexAttribPointer(4, 1, this.gl.FLOAT, false, this.instanceFloatCount * 4, offset);
-        this.gl.vertexAttribDivisor(4, 1);
         offset += 1 * 4;
 
         this.gl.bindVertexArray(null);
@@ -74,10 +65,9 @@ class AtomsRenderer {
         return true;
     }
 
-    updateInstances(atoms) {
-        const count = atoms.length;
+    updateInstances(waterCells) {
+        const count = waterCells.length;
         if (count > this.maxInstances) {
-            // reallocate
             this.maxInstances = count;
             this.instanceData = new Float32Array(this.maxInstances * this.instanceFloatCount);
             this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.instanceBuffer);
@@ -85,35 +75,39 @@ class AtomsRenderer {
             this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
         }
 
+        const sizeX = uraniumAtomsSpacingX * 2.02;
+        const sizeY = uraniumAtomsSpacingY * 2.02;
+        const alphaScale = 200.0 / 255.0;
+
         for (let i = 0; i < count; i++) {
-            const a = atoms[i];
+            const cell = waterCells[i];
             const base = i * this.instanceFloatCount;
-            this.instanceData[base + 0] = a.position.x;
-            this.instanceData[base + 1] = a.position.y;
-            // p5 color -> components 0..255
-            const r = red(a.color) / 255.0;
-            const g = green(a.color) / 255.0;
-            const b = blue(a.color) / 255.0;
-            const alpha = (a.flash > 0) ? 1.0 : 1.0;
-            this.instanceData[base + 2] = r;
-            this.instanceData[base + 3] = g;
-            this.instanceData[base + 4] = b;
-            this.instanceData[base + 5] = alpha;
-            this.instanceData[base + 6] = a.radius * 2.0; // size diameter
-            this.instanceData[base + 7] = (a.flash > 0) ? 1.0 : 0.0;
+
+            const t = (cell.temperature - 25) / (1700 - 25);
+            const clamped = Math.max(0, Math.min(1, t));
+            const alpha = clamped * alphaScale;
+
+            this.instanceData[base + 0] = cell.position.x;
+            this.instanceData[base + 1] = cell.position.y;
+            this.instanceData[base + 2] = sizeX;
+            this.instanceData[base + 3] = sizeY;
+            this.instanceData[base + 4] = alpha;
         }
 
-        // Upload to GPU
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.instanceBuffer);
         this.gl.bufferSubData(this.gl.ARRAY_BUFFER, 0, this.instanceData, 0, count * this.instanceFloatCount);
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
 
+        this.lastCount = count;
         return count;
     }
 
     draw(count) {
         if (!this.gl || !this.program) return;
+        const instanceCount = count ?? this.lastCount;
         this.gl.useProgram(this.program);
+        this.gl.enable(this.gl.BLEND);
+        this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
         this.gl.bindVertexArray(this.vao);
         const uResLoc = this.gl.getUniformLocation(this.program, 'u_resolution');
         this.gl.uniform2f(uResLoc, this.gl.canvas.width, this.gl.canvas.height);
@@ -121,12 +115,13 @@ class AtomsRenderer {
         this.gl.uniform1f(rendHeightLoc, screenRenderHeight);
         const rendWidthLoc = this.gl.getUniformLocation(this.program, "render_width");
         this.gl.uniform1f(rendWidthLoc, screenRenderWidth);
-        this.gl.drawArraysInstanced(this.gl.TRIANGLES, 0, 6, count);
+        this.gl.drawArraysInstanced(this.gl.TRIANGLES, 0, 6, instanceCount);
         this.gl.bindVertexArray(null);
+        this.gl.disable(this.gl.BLEND);
         this.gl.useProgram(null);
     }
 
-    renderImage() {
+    renderImage(count) {
         const gl2 = glShit.simGL;
 
         gl2.bindFramebuffer(gl2.FRAMEBUFFER, null);
@@ -134,7 +129,7 @@ class AtomsRenderer {
         gl2.clearColor(0, 0, 0, 0);
         gl2.clear(gl2.COLOR_BUFFER_BIT);
 
-        this.draw(uraniumAtoms.length);
+        this.draw(count ?? this.lastCount);
 
         if (!glShit.p5Copy) {
             glShit.p5Copy = createGraphics(
@@ -142,6 +137,8 @@ class AtomsRenderer {
                 screenDrawHeight
             );
         }
+
+        glShit.p5Copy.clear();
 
         glShit.p5Copy.drawingContext.drawImage(
             glShit.simCanvas,
@@ -153,4 +150,4 @@ class AtomsRenderer {
     }
 }
 
-const atomsRenderer = new AtomsRenderer();
+const steamRenderer = new SteamRenderer();

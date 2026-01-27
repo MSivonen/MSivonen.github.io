@@ -32,12 +32,33 @@ function initShadersAndGL() {
     // Initialize GPU instanced atom renderer (fallback to CPU if fails)
     try {
         if (typeof atomsRenderer !== 'undefined') {
-            atomsRenderer.init(glShit.simGL, uraniumAtomsCountX * uraniumAtomsCountY);
+            atomsRenderer.init(
+                glShit.simGL,
+                uraniumAtomsCountX * uraniumAtomsCountY,
+                glShit.shaderCodes.atomsVertCode,
+                glShit.shaderCodes.atomsFragCode
+            );
             glShit.useInstancedAtoms = true;
         }
     } catch (e) {
         console.warn('atomsRenderer init failed, falling back to CPU draw', e);
         glShit.useInstancedAtoms = false;
+    }
+
+    // Initialize GPU steam renderer
+    try {
+        if (typeof steamRenderer !== 'undefined') {
+            steamRenderer.init(
+                glShit.simGL,
+                uraniumAtomsCountX * uraniumAtomsCountY,
+                glShit.shaderCodes.steamVertCode,
+                glShit.shaderCodes.steamFragCode
+            );
+            glShit.useGpuSteam = true;
+        }
+    } catch (e) {
+        console.warn('steamRenderer init failed, falling back to CPU draw', e);
+        glShit.useGpuSteam = false;
     }
 }
 
@@ -108,18 +129,11 @@ function renderScene() {
     scale(screenRenderHeight / screenDrawHeight);
     translate(-screenDrawWidth / 2, -screenDrawHeight / 2);
 
-    // Atoms: prefer GPU instanced renderer if available
-    if (glShit.useInstancedAtoms && typeof atomsRenderer !== 'undefined') {
-        // Update instance buffer and draw to the simCanvas (WebGL2)
-        atomsRenderer.updateInstances(uraniumAtoms);
-        atomsRenderer.draw(uraniumAtoms.length);
-    } else {
-        uraniumAtoms.forEach(s => s.draw());
-    }
+    atomsRenderer.updateInstances(uraniumAtoms);
+    atomsRenderer.draw(uraniumAtoms.length);
+
     controlRods.forEach(s => s.draw());
 
-    
-    
     drawSteam();
     atomsRenderer.renderImage();
     ui.meter.show();
@@ -127,6 +141,6 @@ function renderScene() {
     gameOver();
     drawFPS();
     drawBorders();
-    
+
     pop();
 }

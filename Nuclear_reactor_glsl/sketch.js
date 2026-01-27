@@ -17,8 +17,10 @@ const settings = {
   uraniumToWaterHeatTransfer: 0.1,
   heatTransferCoefficient: 0.04,
   uraniumSize: 2,
-  neutronSize: 10 //for simulation, not only for show...
+  neutronSize: 150
 };
+
+const defaultSettings = { ...settings };
 
 // === Misc shit ===
 let uraniumAtoms = [];
@@ -50,10 +52,14 @@ const glShit = {
   uNeutronsLoc: null,
   uRenderResLoc: null,
   uRenderTexSizeLoc: null,
+  uRenderSimSizeLoc: null,
+  uRenderNeutronSizeLoc: null,
+  uRenderNeutronsLoc: null,
   reportTex: null,
   reportFBO: null,
   reportVao: null,
   reportData: null,
+  useGpuSteam: false,
 
   shaderCodes: {
     simVertSrc: null,
@@ -62,12 +68,20 @@ const glShit = {
     rendFragSrc: null,
     reportVertSrc: null,
     reportFragSrc: null,
+    atomsVertSrc: null,
+    atomsFragSrc: null,
+    steamVertSrc: null,
+    steamFragSrc: null,
     simVertCode: null,
     simFragCode: null,
     rendVertCode: null,
     rendFragCode: null,
     reportVertCode: null,
     reportFragCode: null,
+    atomsVertCode: null,
+    atomsFragCode: null,
+    steamVertCode: null,
+    steamFragCode: null,
   }
 };
 
@@ -106,6 +120,10 @@ function preload() {
   glShit.shaderCodes.rendFragSrc = loadStrings('shaders/render.frag');
   glShit.shaderCodes.reportVertSrc = loadStrings('shaders/report.vert');
   glShit.shaderCodes.reportFragSrc = loadStrings('shaders/report.frag');
+  glShit.shaderCodes.atomsVertSrc = loadStrings('shaders/atoms.vert');
+  glShit.shaderCodes.atomsFragSrc = loadStrings('shaders/atoms.frag');
+  glShit.shaderCodes.steamVertSrc = loadStrings('shaders/steam.vert');
+  glShit.shaderCodes.steamFragSrc = loadStrings('shaders/steam.frag');
 }
 
 function setup() {
@@ -116,6 +134,10 @@ function setup() {
   glShit.shaderCodes.rendFragCode = glShit.shaderCodes.rendFragSrc.join('\n');
   glShit.shaderCodes.reportVertCode = glShit.shaderCodes.reportVertSrc.join('\n');
   glShit.shaderCodes.reportFragCode = glShit.shaderCodes.reportFragSrc.join('\n');
+  glShit.shaderCodes.atomsVertCode = glShit.shaderCodes.atomsVertSrc.join('\n');
+  glShit.shaderCodes.atomsFragCode = glShit.shaderCodes.atomsFragSrc.join('\n');
+  glShit.shaderCodes.steamVertCode = glShit.shaderCodes.steamVertSrc.join('\n');
+  glShit.shaderCodes.steamFragCode = glShit.shaderCodes.steamFragSrc.join('\n');
   // Delegate initialization to helpers
   initShadersAndGL();
   collisionReport = new CollisionReport();
