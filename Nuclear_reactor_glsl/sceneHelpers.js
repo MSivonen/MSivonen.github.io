@@ -12,6 +12,7 @@ function initShadersAndGL() {
         depth: false,
         antialias: false,
         preserveDrawingBuffer: true,
+        premultipliedAlpha: false,
     });
 
     // Ensure required extension present (no-op if not)

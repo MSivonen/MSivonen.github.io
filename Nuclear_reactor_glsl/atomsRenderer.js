@@ -121,7 +121,15 @@ class AtomsRenderer {
         this.gl.uniform1f(rendHeightLoc, screenRenderHeight);
         const rendWidthLoc = this.gl.getUniformLocation(this.program, "render_width");
         this.gl.uniform1f(rendWidthLoc, screenRenderWidth);
+        // Use alpha-weighted additive blending for smooth glow (src alpha, add to dest)
+        this.gl.enable(this.gl.BLEND);
+        if (this.gl.blendFuncSeparate) {
+            this.gl.blendFuncSeparate(this.gl.SRC_ALPHA, this.gl.ONE, this.gl.ONE, this.gl.ONE_MINUS_SRC_ALPHA);
+        } else {
+            this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE);
+        }
         this.gl.drawArraysInstanced(this.gl.TRIANGLES, 0, 6, count);
+        this.gl.disable(this.gl.BLEND);
         this.gl.bindVertexArray(null);
         this.gl.useProgram(null);
     }

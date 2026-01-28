@@ -16,7 +16,7 @@ const settings = {
   heatingRate: 1500,
   uraniumToWaterHeatTransfer: 0.1,
   heatTransferCoefficient: 0.04,
-  uraniumSize: 2,
+  uraniumSize: 5,
   neutronSize: 150
 };
 
