@@ -233,11 +233,13 @@ function initRenderShader(gl, vsSource, fsSource) {
     gl.useProgram(null);
 }
 
-function gpuDrawNeutrons(gl) {
+function gpuDrawNeutrons(gl, { clear = true } = {}) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, glShit.simCanvas.width, glShit.simCanvas.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    if (clear) {
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+    }
 
     gl.useProgram(glShit.renderProgram);
     gl.enable(gl.BLEND);

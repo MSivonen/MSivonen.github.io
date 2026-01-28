@@ -118,9 +118,11 @@ class AtomsRenderer {
         const uResLoc = this.gl.getUniformLocation(this.program, 'u_resolution');
         this.gl.uniform2f(uResLoc, this.gl.canvas.width, this.gl.canvas.height);
         const rendHeightLoc = this.gl.getUniformLocation(this.program, "render_height");
-        this.gl.uniform1f(rendHeightLoc, screenRenderHeight);
+        // Instance positions are in simulation/draw coordinates (screenDrawWidth/Height)
+        // so the shader can scale+letterbox into the render canvas.
+        this.gl.uniform1f(rendHeightLoc, screenDrawHeight);
         const rendWidthLoc = this.gl.getUniformLocation(this.program, "render_width");
-        this.gl.uniform1f(rendWidthLoc, screenRenderWidth);
+        this.gl.uniform1f(rendWidthLoc, screenDrawWidth);
         // Use alpha-weighted additive blending for smooth glow (src alpha, add to dest)
         this.gl.enable(this.gl.BLEND);
         if (this.gl.blendFuncSeparate) {

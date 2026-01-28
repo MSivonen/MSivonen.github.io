@@ -122,12 +122,16 @@ function preload() {
   glShit.shaderCodes.reportFragSrc = loadStrings('shaders/report.frag');
   glShit.shaderCodes.atomsVertSrc = loadStrings('shaders/atoms.vert');
   glShit.shaderCodes.atomsFragSrc = loadStrings('shaders/atoms.frag');
+  glShit.shaderCodes.atomsCoreFragSrc = loadStrings('shaders/atoms_core.frag');
   glShit.shaderCodes.steamVertSrc = loadStrings('shaders/steam.vert');
   glShit.shaderCodes.steamFragSrc = loadStrings('shaders/steam.frag');
 }
 
 function setup() {
-  createCanvas(screenRenderWidth, screenRenderHeight, WEBGL);
+  const cnv = createCanvas(screenRenderWidth, screenRenderHeight, WEBGL);
+  // Ensure the p5 canvas and simCanvas share the same positioned parent so
+  // the WebGL overlay lines up (no unexpected offset from other DOM elements).
+  cnv.parent('canvas-container');
   glShit.shaderCodes.simVertCode = glShit.shaderCodes.simVertSrc.join('\n');
   glShit.shaderCodes.simFragCode = glShit.shaderCodes.simFragSrc.join('\n');
   glShit.shaderCodes.rendVertCode = glShit.shaderCodes.rendVertSrc.join('\n');
@@ -136,6 +140,7 @@ function setup() {
   glShit.shaderCodes.reportFragCode = glShit.shaderCodes.reportFragSrc.join('\n');
   glShit.shaderCodes.atomsVertCode = glShit.shaderCodes.atomsVertSrc.join('\n');
   glShit.shaderCodes.atomsFragCode = glShit.shaderCodes.atomsFragSrc.join('\n');
+  glShit.shaderCodes.atomsCoreFragCode = glShit.shaderCodes.atomsCoreFragSrc.join('\n');
   glShit.shaderCodes.steamVertCode = glShit.shaderCodes.steamVertSrc.join('\n');
   glShit.shaderCodes.steamFragCode = glShit.shaderCodes.steamFragSrc.join('\n');
   // Delegate initialization to helpers
@@ -156,8 +161,11 @@ function draw() {
   // Render p5 portion
   renderScene();
 
-  // GPU render for neutrons
-  gpuDrawNeutrons(glShit.simGL);
+  // Atom cores (normal alpha) on coreCanvas
+  renderAtomCores();
+
+  // GPU overlays (steam/atoms/neutrons) on simCanvas
+  renderSimOverlay();
 
   energyThisFrame = 0;
 }

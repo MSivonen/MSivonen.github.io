@@ -3,16 +3,31 @@
 function initShadersAndGL() {
     gl = drawingContext;
 
+    // Core canvas (normal alpha compositing)
+    glShit.coreCanvas = document.getElementById("coreCanvas");
+    glShit.coreCanvas.width = screenRenderWidth;
+    glShit.coreCanvas.height = screenRenderHeight;
+    glShit.coreGL = glShit.coreCanvas.getContext("webgl2", {
+        alpha: true,
+        depth: false,
+        antialias: false,
+        preserveDrawingBuffer: false,
+        premultipliedAlpha: true,
+    });
+
     glShit.simCanvas = document.getElementById("simCanvas");
     glShit.simCanvas.width = screenRenderWidth;
     glShit.simCanvas.height = screenRenderHeight;
 
+    // Use an opaque (black) drawing buffer. The page composites simCanvas over the
+    // p5 canvas using CSS `mix-blend-mode: screen`, so black means "no effect" and
+    // we avoid dark halos from low-alpha source-over compositing.
     glShit.simGL = glShit.simCanvas.getContext("webgl2", {
-        alpha: true,
+        alpha: false,
         depth: false,
         antialias: false,
         preserveDrawingBuffer: true,
-        premultipliedAlpha: false,
+        premultipliedAlpha: true,
     });
 
     // Ensure required extension present (no-op if not)
@@ -44,6 +59,23 @@ function initShadersAndGL() {
     } catch (e) {
         console.warn('atomsRenderer init failed, falling back to CPU draw', e);
         glShit.useInstancedAtoms = false;
+    }
+
+    // Atom core renderer on coreCanvas
+    try {
+        if (glShit.coreGL && typeof AtomsRenderer !== 'undefined') {
+            glShit.atomsCoreRenderer = new AtomsRenderer();
+            glShit.atomsCoreRenderer.init(
+                glShit.coreGL,
+                uraniumAtomsCountX * uraniumAtomsCountY,
+                glShit.shaderCodes.atomsVertCode,
+                glShit.shaderCodes.atomsCoreFragCode
+            );
+            glShit.useCoreAtoms = true;
+        }
+    } catch (e) {
+        console.warn('atoms core renderer init failed, falling back to glow-only', e);
+        glShit.useCoreAtoms = false;
     }
 
     // Initialize GPU steam renderer
@@ -130,13 +162,9 @@ function renderScene() {
     scale(screenRenderHeight / screenDrawHeight);
     translate(-screenDrawWidth / 2, -screenDrawHeight / 2);
 
-    atomsRenderer.updateInstances(uraniumAtoms);
-    atomsRenderer.draw(uraniumAtoms.length);
-
     controlRods.forEach(s => s.draw());
 
     drawSteam();
-    atomsRenderer.renderImage();
     ui.meter.show();
     ui.controlSlider.slider();
     gameOver();
@@ -144,4 +172,45 @@ function renderScene() {
     drawBorders();
 
     pop();
+}
+
+function renderAtomCores() {
+    if (!glShit.useCoreAtoms || !glShit.atomsCoreRenderer) return;
+    const gl = glShit.coreGL;
+    if (!gl) return;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, glShit.coreCanvas.width, glShit.coreCanvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    glShit.atomsCoreRenderer.updateInstances(uraniumAtoms);
+    // Standard alpha blending for solid cores
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    glShit.atomsCoreRenderer.draw(uraniumAtoms.length);
+    gl.disable(gl.BLEND);
+}
+
+// Render GPU overlays (steam/atoms/neutrons) onto the transparent simCanvas.
+// This avoids copying WebGL output through a 2D canvas (p5Copy), which can
+// introduce premultiply/alpha artifacts (dark halos) on non-black backgrounds.
+function renderSimOverlay() {
+    const gl = glShit.simGL;
+    if (!gl) return;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, glShit.simCanvas.width, glShit.simCanvas.height);
+    // Opaque black. With CSS screen blending, black contributes nothing.
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // Atoms (GPU instanced) - glow only (core is drawn in p5)
+    if (glShit.useInstancedAtoms && typeof atomsRenderer !== 'undefined') {
+        atomsRenderer.updateInstances(uraniumAtoms);
+        atomsRenderer.draw(uraniumAtoms.length);
+    }
+
+    // Neutrons on top
+    gpuDrawNeutrons(gl, { clear: false });
 }

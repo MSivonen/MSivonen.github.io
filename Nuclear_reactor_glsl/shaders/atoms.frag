@@ -14,17 +14,11 @@ void main(){
     float d2 = dot(p, p);
     if(d2 > 1.0) discard;
 
-    // core + glow shape (copied/adapted from render.frag)
-    // Increase core size for triangle-based atoms and adjust glow curve
-    float coreSize = 0.3;
-    float glowAmount = -4.0;
-
-    float core = 1.0 - smoothstep(0.0, coreSize, d2);
-    float glow = exp(glowAmount * d2);
-
+    // Glow-only layer: the opaque core is drawn in the main p5 canvas.
+    // Here we only emit light that will be screen-blended via CSS.
     float fast = exp(-d2 * 200.0);
-    float tail = exp(-d2 * 1.0) * 0.25;
-    glow = fast + tail;
+    float tail = exp(-d2 * 2.0) * 0.25;
+    float glow = fast + tail;
 
     // Determine glow strength from color intensity (less temp -> less glow)
     float maxc = max(max(vColor.r, vColor.g), vColor.b);
@@ -33,18 +27,14 @@ void main(){
     glow *= 11.2;
     glow *= glowScale;
 
-    vec3 col = vColor.rgb * core;
-    col += vColor.rgb * glow;
+    vec3 glowCol = vColor.rgb * glow;
+    float alpha = clamp(glow, 0.0, 1.0);
 
     if (vFlash > 0.5) {
         float flashBoost = 1.5;
-        vec3 flashCol = vec3(1.0) * (core + glow * flashBoost);
-        col = flashCol;
-        float alpha = clamp(core + glow * flashBoost, 0.0, 1.0);
-        outColor = vec4(col, alpha);
-        return;
+        glowCol = vec3(1.0) * (glow * flashBoost);
+        alpha = clamp(glow * flashBoost, 0.0, 1.0);
     }
 
-    float alpha = clamp(core + glow, 0.0, 1.0);
-    outColor = vec4(col, alpha);
+    outColor = vec4(glowCol, alpha*.5);
 }

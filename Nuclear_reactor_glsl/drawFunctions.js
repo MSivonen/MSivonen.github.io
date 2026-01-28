@@ -1,9 +1,6 @@
 function drawSteam() {
-    if (glShit.useGpuSteam && typeof steamRenderer !== 'undefined') {
-        const count = steamRenderer.updateInstances(waterCells);
-        steamRenderer.renderImage(count);
-        return;
-    }
+    // Steam is drawn in the main p5 canvas with normal alpha blending.
+    // (The simCanvas overlay is screen-blended and intended for glows only.)
 
     steamImage.clear();
     steamImage.push();
