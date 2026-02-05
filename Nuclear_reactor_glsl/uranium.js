@@ -1,25 +1,29 @@
 // UraniumAtom Class
 class UraniumAtom {
-  constructor(x, y, waterCell) {
-    this.position = createVector(x, y);
+  constructor(x, y, waterCell, hasAtom, atomGroup) {
+    this.position = { x: x, y: y };
     this.radius = settings.uraniumSize;
-    this.color = color(50);
+    this.color = { r: 50, g: 50, b: 50, a: 255 };
     this.isHit = false;
     this.flash = 0;
     this.heat = 25;
     this.waterCell = waterCell;
     this.index = null;
+    this.hasAtom = hasAtom;
+    this.atomGroup = atomGroup;
   }
 
-  draw() {
-    noStroke();
-    fill(this.color);
-    rectMode(CENTER);
-    rect(this.position.x, this.position.y, this.radius * 2, this.radius * 2);
+  draw(ctx, offsetX = 0) {
+    const x = offsetX + this.position.x;
+    const y = this.position.y;
+    ctx.save();
+    ctx.fillStyle = `rgba(${Math.round(this.color.r)}, ${Math.round(this.color.g)}, ${Math.round(this.color.b)}, ${this.color.a / 255})`;
+    ctx.fillRect(x - this.radius, y - this.radius, this.radius * 2, this.radius * 2);
+    ctx.restore();
   }
 
   update() {
-    if (random() < settings.decayProbability) {
+    if (Math.random() < settings.decayProbability) {
       this.createNeutron();
     }
     this.flash--;
@@ -29,48 +33,55 @@ class UraniumAtom {
   }
 
   heatTransferToWater() {
-    const deltaT = (this.heat - this.waterCell.temperature) * settings.uraniumToWaterHeatTransfer;
+    const tempDiff = this.heat - this.waterCell.temperature;
+    const baseTransfer = tempDiff * settings.uraniumToWaterHeatTransfer;
+    // Boost transfer when temperature difference is high
+    const diffBoost = 1 + Math.min(Math.abs(tempDiff) / 500, 2);
+    const deltaT = baseTransfer * diffBoost;
     this.heat -= deltaT;
     this.waterCell.temperature += deltaT;
-    energyThisFrame += deltaT;
+
   }
 
   hitByNeutron() {
     this.isHit = true;
     this.heat += settings.heatingRate;
-    this.flash = 10; // Flash for 10 frames
+    //this.flash = 10; // Flash for 10 frames
   }
 
   createNeutron() {
-    addNeutron(this.position.x, this.position.y, this.radius);
+    neutron.spawn(this.position.x, this.position.y, this.radius);
   }
 }
 
 function computeUraniumColor(heat, flash) {
   if (flash > 0) {
-    return color(255, 255, 255);
+    return { r: 255, g: 255, b: 255, a: 255 };
   }
 
-  if (heat <= 250) {
-    const t = heat / 250;
-    const r = lerp(0, 255, t);
-    const g = lerp(40, 0, t);
-    return color(clamp255(r), clamp255(g), 0);
-  }
+  const temp = Math.max(15, heat);
 
-  if (heat <= 1000) {
-    const t = (heat - 250) / 250;
-    const g = lerp(0, 255, t);
-    return color(255, clamp255(g), 0);
-  }
+  // Temperature thresholds for color transitions
+  const redStart = 150;
+  const redEnd = 500;
+  const yellowStart = 400; // Overlap with red by 100°C (redEnd - yellowStart = 100)
+  const yellowEnd = 1000;
+  const whiteStart = 900;
+  const blueRange = 500;
 
-  if (heat <= 1500) {
-    const t = (heat - 500) / 500;
-    const b = lerp(0, 255, t);
-    return color(255, 255, clamp255(b));
-  }
+  // Red channel: redStart to redEnd
+  const redRange = Math.max(1, redEnd - redStart);
+  const r = 255 * Math.min(1, Math.max(0, (temp - redStart) / redRange));
 
-  return color(255, 255, 255);
+  // Green channel: yellowStart to yellowEnd
+  const greenRange = Math.max(1, yellowEnd - yellowStart);
+  const g = 255 * Math.min(1, Math.max(0, (temp - yellowStart) / greenRange));
+
+  // Blue channel: whiteStart onwards
+  const safeBlueRange = Math.max(1, blueRange);
+  const b = 255 * Math.min(1, Math.max(0, (temp - whiteStart) / safeBlueRange));
+
+  return { r: clamp255(r), g: clamp255(g), b: Math.min(100,clamp255(b)), a: 255 };
 }
 
 function clamp255(value) {

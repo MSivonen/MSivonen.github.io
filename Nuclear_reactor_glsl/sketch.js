@@ -1,171 +1,153 @@
 // === Screen constants ===
-const screenDrawWidth = 800;
-const screenDrawHeight = 600;
-const controlRodsStartPos = screenDrawHeight * .9;
-const screenRenderWidth = 1384;
-const screenRenderHeight = 768;
-const waterColor = [22, 88, 90];
+let screenHeight = 600;
+let screenWidth = Math.floor(screenHeight * 1.7778);
+let screenSimWidth = Math.floor(screenHeight * (4 / 3));
+let SHOP_WIDTH = screenWidth - screenSimWidth;
+let controlRodsStartPos = -screenHeight * .9;
 
-const settings = {
-  neutronSpeed: 5,
-  collisionProbability: 0.08,
+const waterColor = [52, 95, 120];
+
+// Global scale factor (1.0 when height == 600)
+let globalScale = screenHeight / 600;
+
+const defaultSettings = {
+  neutronSpeed: 5, // Restored to original speed now that simulation is fixed
+  collisionProbability: 0.055,
   decayProbability: 0.0001,
-  controlRodAbsorptionProbability: 0.55,
-  controlRodHitProbability: 0.225,
+  controlRodAbsorptionProbability: 0.1,
+  controlRodHitProbability: 0.325,
   waterFlowSpeed: 0.3,
-  heatingRate: 1500,
-  uraniumToWaterHeatTransfer: 0.1,
+  heatingRate: 50,
+  uraniumToWaterHeatTransfer: 0.3,
   heatTransferCoefficient: 0.04,
-  uraniumSize: 5,
-  neutronSize: 150
+  inletTemperature: 15,
+  moneyExponent: 1.5,
+  uraniumSize: 10,
+  neutronSize: 30,
+  neutronsDownSizeMaxAmount:5000,
+  linkRods: false,
+  cheatMode: false
 };
+let settings = { ...defaultSettings };
 
-const defaultSettings = { ...settings };
-
-// === Misc shit ===
+// === Runtime state ===
 let uraniumAtoms = [];
 let controlRods = [];
 let waterCells = [];
 let grid;
-let steamImage;
-let boom = false;
-let collisionReport;
-let currentNeutronIndex = 0;
+var boom = false;
+var boomStartTime = 0;
 let font;
-let energyOutput = 0;
+var energyOutput = 0;
 let energyThisFrame = 0;
-let energyOutputCounter = 0;
-let tex;
+var energyOutputCounter = 0; // accumulator: sum(power_kW * dt) over the second
+let lastMoneyPerSecond = 0;
+let paused = false;
+var renderTime = 0;
+window.currentNeutronSizeMultiplier = 1;
 
+// Loading screen variables
+let loading = true;
 
+let waterSystem;
 
-const glShit = {
-  simGL: null,
-  simCanvas: null,
-  simProgram: null,
-  renderProgram: null,
-  readTex: null,
-  writeTex: null,
-  readFBO: null,
-  writeFBO: null,
-  quadVao: null,
-  uNeutronsLoc: null,
-  uRenderResLoc: null,
-  uRenderTexSizeLoc: null,
-  uRenderSimSizeLoc: null,
-  uRenderNeutronSizeLoc: null,
-  uRenderNeutronsLoc: null,
-  reportTex: null,
-  reportFBO: null,
-  reportVao: null,
-  reportData: null,
-  useGpuSteam: false,
-
-  shaderCodes: {
-    simVertSrc: null,
-    simFragSrc: null,
-    rendVertSrc: null,
-    rendFragSrc: null,
-    reportVertSrc: null,
-    reportFragSrc: null,
-    atomsVertSrc: null,
-    atomsFragSrc: null,
-    steamVertSrc: null,
-    steamFragSrc: null,
-    simVertCode: null,
-    simFragCode: null,
-    rendVertCode: null,
-    rendFragCode: null,
-    reportVertCode: null,
-    reportFragCode: null,
-    atomsVertCode: null,
-    atomsFragCode: null,
-    steamVertCode: null,
-    steamFragCode: null,
-  }
-};
 
 const ui = {
-  totalNeutrons: 0,
-  decayNeutrons: 0,
-  collisionNeutrons: 0,
   lastUpdateTime: performance.now(),
   collisionsThisSecond: 0,
   fpsText: 0,
   avgFps: 0,
   prevTime: 0,
   framesCounted: 0,
-  meter: null,
+  accumulatedTime: 0,
+  powerMeter: null,
+  tempMeter: null,
   controlSlider: null
 };
+
+//game variables
+const game = {
+  // threshold in physical kW (1 MW = 1000 kW)
+  boomValue: 1000
+}
 
 //scene variables
 const uraniumAtomsCountX = 41;
 const uraniumAtomsCountY = 30;
-const uraniumAtomsSpacingX = screenDrawWidth / uraniumAtomsCountX;
-const uraniumAtomsSpacingY = screenDrawHeight / uraniumAtomsCountY;
+let uraniumAtomsSpacingX;
+let uraniumAtomsSpacingY;
 const controlRodCount = 5;
-const controlRodWidth = 10;
-const controlRodHeight = 600;
+let controlRodWidth;
+let controlRodHeight;
 const NEUTRON_STRIDE = 4;
 const MAX_NEUTRONS = 512;
 const MAX_NEUTRONS_SQUARED = MAX_NEUTRONS * MAX_NEUTRONS;
+// let neutron;
 
 
-function preload() {
-  font = loadFont("HARRYP_.TTF");
-  glShit.shaderCodes.simVertSrc = loadStrings('shaders/sim.vert');
-  glShit.shaderCodes.simFragSrc = loadStrings('shaders/sim.frag');
-  glShit.shaderCodes.rendVertSrc = loadStrings('shaders/render.vert');
-  glShit.shaderCodes.rendFragSrc = loadStrings('shaders/render.frag');
-  glShit.shaderCodes.reportVertSrc = loadStrings('shaders/report.vert');
-  glShit.shaderCodes.reportFragSrc = loadStrings('shaders/report.frag');
-  glShit.shaderCodes.atomsVertSrc = loadStrings('shaders/atoms.vert');
-  glShit.shaderCodes.atomsFragSrc = loadStrings('shaders/atoms.frag');
-  glShit.shaderCodes.atomsCoreFragSrc = loadStrings('shaders/atoms_core.frag');
-  glShit.shaderCodes.steamVertSrc = loadStrings('shaders/steam.vert');
-  glShit.shaderCodes.steamFragSrc = loadStrings('shaders/steam.frag');
+function updateDimensions() {
+  // Use manual `screenWidth` and `screenHeight` values set at top of file.
+  screenWidth = Math.floor(screenHeight * 1.7778);
+  screenSimWidth = Math.floor(screenHeight * (4 / 3));
+  SHOP_WIDTH = screenWidth - screenSimWidth;
+  screenRenderWidth = screenWidth;
+
+  // update the single global scale value (base height = 600 => scale 1)
+  globalScale = screenHeight / 600;
+
+  uraniumAtomsSpacingX = screenSimWidth / uraniumAtomsCountX;
+  uraniumAtomsSpacingY = screenHeight / uraniumAtomsCountY;
+
+  controlRodWidth = 10 * globalScale;
+  controlRodHeight = 600 * globalScale;
+  controlRodsStartPos = -screenHeight * 0.9;
+
+  settings.uraniumSize = settings.uraniumSize * globalScale;
+  settings.neutronSize = settings.neutronSize * globalScale;
+  settings.neutronSpeed = settings.neutronSpeed * globalScale;
+  console.log("sss")
 }
 
 function setup() {
-  const cnv = createCanvas(screenRenderWidth, screenRenderHeight, WEBGL);
-  // Ensure the p5 canvas and simCanvas share the same positioned parent so
-  // the WebGL overlay lines up (no unexpected offset from other DOM elements).
-  cnv.parent('canvas-container');
-  glShit.shaderCodes.simVertCode = glShit.shaderCodes.simVertSrc.join('\n');
-  glShit.shaderCodes.simFragCode = glShit.shaderCodes.simFragSrc.join('\n');
-  glShit.shaderCodes.rendVertCode = glShit.shaderCodes.rendVertSrc.join('\n');
-  glShit.shaderCodes.rendFragCode = glShit.shaderCodes.rendFragSrc.join('\n');
-  glShit.shaderCodes.reportVertCode = glShit.shaderCodes.reportVertSrc.join('\n');
-  glShit.shaderCodes.reportFragCode = glShit.shaderCodes.reportFragSrc.join('\n');
-  glShit.shaderCodes.atomsVertCode = glShit.shaderCodes.atomsVertSrc.join('\n');
-  glShit.shaderCodes.atomsFragCode = glShit.shaderCodes.atomsFragSrc.join('\n');
-  glShit.shaderCodes.atomsCoreFragCode = glShit.shaderCodes.atomsCoreFragSrc.join('\n');
-  glShit.shaderCodes.steamVertCode = glShit.shaderCodes.steamVertSrc.join('\n');
-  glShit.shaderCodes.steamFragCode = glShit.shaderCodes.steamFragSrc.join('\n');
-  // Delegate initialization to helpers
-  initShadersAndGL();
-  collisionReport = new CollisionReport();
-  initSceneObjects();
+  updateDimensions();
 
+  //debug(); //DO NOT REMOVE THIS LINE
+  noCanvas(); //For mouse etc, do not remove
+
+  const gameCnv = document.getElementById('gameCanvas');
+  if (gameCnv) {
+    gameCnv.width = screenRenderWidth;
+    gameCnv.height = screenHeight;
+  }
 }
 
+(async () => {
+  await loader.startLoading(loadingTasks, () => {
+    loading = false;
+    document.getElementById('loading-screen').style.display = 'none';
+    audioManager.startAmbience();
+  });
+})();
+
 function draw() {
-  // Update neutrons in GPU
-  gpuUpdateNeutrons(glShit.simGL);
-  processCollisions(glShit.simGL);
+  if (loading) {
+    return;
+  }
 
-  // Update CPU-side state
-  updateScene();
+  if (!paused) {
+    if (typeof deltaTime !== 'undefined') renderTime += deltaTime / 1000.0;
 
-  // Render p5 portion
-  renderScene();
+    // Update CPU-side state
+    updateScene();
 
-  // Atom cores (normal alpha) on coreCanvas
-  renderAtomCores();
+    if (boom && boomStartTime == 0) {
+      boomStartTime = renderTime;
+      audioManager.playSfx('boom');
+    }
+  }
 
-  // GPU overlays (steam/atoms/neutrons) on simCanvas
-  renderSimOverlay();
-
-  energyThisFrame = 0;
+  // Core layer (steam + atom cores) on coreCanvas
+  // This draws the scene using 'renderTime' (if updated in sceneHelpers)
+  // and draws the UI/Pause Menu on top
+  drawScene();
 }

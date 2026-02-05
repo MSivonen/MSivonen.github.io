@@ -1,18 +1,20 @@
 #version 300 es
 precision highp float;
 
+uniform float u_alpha;
+
 out vec4 outColor;
 
 void main(){
     float coreSize=.003;
     float glowAmount=-4.;
     
-    // Keskitetty koordinaatti
+    // Centered coordinates
     vec2 p=gl_PointCoord*2.-1.;
     float d2=dot(p,p);
     if(d2>1.)discard;
     
-    // Core ja glow
+    // Core and glow
     float core=1.-smoothstep(0.,coreSize,d2);
     float glow=exp(glowAmount*d2);
     
@@ -29,6 +31,8 @@ void main(){
     
     vec3 col=vec3(core);
     col+=vec3(.2941,1.,.2)*glow;
+
+    col *= u_alpha;
     
-    outColor=vec4(col,glow+core);
+    outColor=vec4(col,(glow+core)*u_alpha);
 }

@@ -3,9 +3,29 @@ html, body {
   padding: 0;
 }
 
+@font-face {
+  font-family: 'UIFont1';
+  src: url('assets/SpecialElite-Regular.ttf');
+}
+
+@font-face {
+  font-family: 'boom1';
+  src: url('assets/RubikBurned-Regular.ttf');
+}
+
+@font-face {
+  font-family: 'boom2';
+  src: url('assets/RubikPuddles-Regular.ttf');
+}
+
 #canvas-container {
   position: relative;
   isolation: isolate;
+}
+
+/* Background for the simulation area (matches `waterColor` in sketch.js) */
+#canvas-container {
+  background: rgb(255, 55, 55);
 }
 
 canvas {

@@ -90,10 +90,10 @@ class AtomsRenderer {
             const base = i * this.instanceFloatCount;
             this.instanceData[base + 0] = a.position.x;
             this.instanceData[base + 1] = a.position.y;
-            // p5 color -> components 0..255
-            const r = red(a.color) / 255.0;
-            const g = green(a.color) / 255.0;
-            const b = blue(a.color) / 255.0;
+            // color object -> components 0..255
+            const r = (a.color && typeof a.color.r !== 'undefined') ? (a.color.r / 255.0) : 0.0;
+            const g = (a.color && typeof a.color.g !== 'undefined') ? (a.color.g / 255.0) : 0.0;
+            const b = (a.color && typeof a.color.b !== 'undefined') ? (a.color.b / 255.0) : 0.0;
             const alpha = (a.flash > 0) ? 1.0 : 1.0;
             this.instanceData[base + 2] = r;
             this.instanceData[base + 3] = g;
@@ -111,55 +111,63 @@ class AtomsRenderer {
         return count;
     }
 
-    draw(count) {
+    draw(count, { blendMode = 'additive' } = {}) {
         if (!this.gl || !this.program) return;
         this.gl.useProgram(this.program);
         this.gl.bindVertexArray(this.vao);
         const uResLoc = this.gl.getUniformLocation(this.program, 'u_resolution');
-        this.gl.uniform2f(uResLoc, this.gl.canvas.width, this.gl.canvas.height);
+        // FIX: Use simulation width/height (viewport size), not full canvas size.
+        // ScreenSimWidth is global from sketch.js
+        this.gl.uniform2f(uResLoc, screenSimWidth, screenHeight);
         const rendHeightLoc = this.gl.getUniformLocation(this.program, "render_height");
         // Instance positions are in simulation/draw coordinates (screenDrawWidth/Height)
         // so the shader can scale+letterbox into the render canvas.
-        this.gl.uniform1f(rendHeightLoc, screenDrawHeight);
+        this.gl.uniform1f(rendHeightLoc, screenHeight);
         const rendWidthLoc = this.gl.getUniformLocation(this.program, "render_width");
-        this.gl.uniform1f(rendWidthLoc, screenDrawWidth);
-        // Use alpha-weighted additive blending for smooth glow (src alpha, add to dest)
-        this.gl.enable(this.gl.BLEND);
-        if (this.gl.blendFuncSeparate) {
-            this.gl.blendFuncSeparate(this.gl.SRC_ALPHA, this.gl.ONE, this.gl.ONE, this.gl.ONE_MINUS_SRC_ALPHA);
-        } else {
-            this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE);
+        this.gl.uniform1f(rendWidthLoc, screenSimWidth);
+
+        if (blendMode && blendMode !== 'none') {
+            this.gl.enable(this.gl.BLEND);
+            if (blendMode === 'alpha') {
+                if (this.gl.blendFuncSeparate) {
+                    this.gl.blendFuncSeparate(
+                        this.gl.SRC_ALPHA,
+                        this.gl.ONE_MINUS_SRC_ALPHA,
+                        this.gl.ONE,
+                        this.gl.ONE_MINUS_SRC_ALPHA
+                    );
+                } else {
+                    this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+                }
+            } else {
+                // Default: alpha-weighted additive blending for glow accumulation
+                if (this.gl.blendFuncSeparate) {
+                    this.gl.blendFuncSeparate(this.gl.SRC_ALPHA, this.gl.ONE, this.gl.ONE, this.gl.ONE_MINUS_SRC_ALPHA);
+                } else {
+                    this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE);
+                }
+            }
         }
+
         this.gl.drawArraysInstanced(this.gl.TRIANGLES, 0, 6, count);
-        this.gl.disable(this.gl.BLEND);
+        if (blendMode && blendMode !== 'none') {
+            this.gl.disable(this.gl.BLEND);
+        }
         this.gl.bindVertexArray(null);
         this.gl.useProgram(null);
     }
 
     renderImage() {
+        // Deprecated helper, but if called, it needs correct handling.
         const gl2 = glShit.simGL;
 
         gl2.bindFramebuffer(gl2.FRAMEBUFFER, null);
-        gl2.viewport(0, 0, glShit.simCanvas.width, glShit.simCanvas.height);
-        gl2.clearColor(0, 0, 0, 0);
-        gl2.clear(gl2.COLOR_BUFFER_BIT);
+        // gl2.viewport(0, 0, glShit.simCanvas.width, glShit.simCanvas.height); // REMOVED
+        // We assume caller sets viewport. If renderImage is called standalone, it might break.
+        // gl2.clearColor(0, 0, 0, 0); // REMOVED
+        // gl2.clear(gl2.COLOR_BUFFER_BIT); // REMOVED
 
         this.draw(uraniumAtoms.length);
-
-        if (!glShit.p5Copy) {
-            glShit.p5Copy = createGraphics(
-                screenDrawWidth,
-                screenDrawHeight
-            );
-        }
-
-        glShit.p5Copy.drawingContext.drawImage(
-            glShit.simCanvas,
-            0,
-            0
-        );
-
-        image(glShit.p5Copy, 0, 0);
     }
 }
 
