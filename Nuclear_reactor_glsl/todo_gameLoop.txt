@@ -105,6 +105,7 @@ MILESTONE 5: LOOP CONTENT & PROGRESSION
     [ ] Loop 4 Data:
         *   Unlock: Buy more control rods in shop.
         *   Tutorial event: unlock control rod upgrades in shop
+        *   Tutorial event: lin control rod upgrades in shop, trigger when buying 3rd rod
     [ ] Loop N (Procedural):
         *   Algorithm to scale Money/Power requirements exponentially (e.g., 1.5x previous).
         *   And make the game harder

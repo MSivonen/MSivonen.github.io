@@ -29,7 +29,6 @@ const loader = {
     loadingStartDiv.style.transition = 'opacity 1s ease-in-out';
 
     startBtn.style.display = 'inline-block';
-    // Position start button at 15% from bottom of canvas
     loadingStartDiv.style.position = 'absolute';
     loadingStartDiv.style.bottom = '15%';
     loadingStartDiv.style.left = '50%';
@@ -57,7 +56,6 @@ const loader = {
       }
       
       // Start Fade Out (Title -> Black)
-      // loadingStartDiv.style.opacity = '0'; // Removed: Let overlay cover them instead
       if (fadeOverlay) fadeOverlay.style.opacity = '1';
 
       setTimeout(() => {
