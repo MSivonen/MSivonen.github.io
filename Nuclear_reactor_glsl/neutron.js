@@ -3,6 +3,31 @@ class Neutron {
         this.buffer = new Float32Array(MAX_NEUTRONS_SQUARED * NEUTRON_STRIDE);
         this.currentIndex = 0;
         this.spawnCount = 0;
+        this.spawnQueue = [];
+    }
+
+    updateAtomMaskTexture(gl) {
+        if (!glShit.atomMaskTex) return;
+        const w = uraniumAtomsCountX;
+        const h = uraniumAtomsCountY;
+        const needed = w * h * 4;
+        if (!glShit.atomMaskData || glShit.atomMaskData.length !== needed) {
+            glShit.atomMaskData = new Uint8Array(needed);
+        }
+        const data = glShit.atomMaskData;
+        data.fill(0);
+
+        for (let i = 0; i < uraniumAtoms.length; i++) {
+            const atom = uraniumAtoms[i];
+            const idx = atom.index * 4;
+            if (idx < 0 || idx + 3 >= data.length) continue;
+            data[idx] = atom.hasAtom ? 255 : 0;
+            data[idx + 3] = 255;
+        }
+
+        gl.bindTexture(gl.TEXTURE_2D, glShit.atomMaskTex);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, data);
+        gl.bindTexture(gl.TEXTURE_2D, null);
     }
 
     createTexture(gl, data) {
@@ -31,8 +56,6 @@ class Neutron {
     }
 
     update(gl) {
-        // Critical: Disable blending for GPGPU simulation step!
-        // With a shared context, previous render passes (like UI) leave blending enabled.
         gl.disable(gl.BLEND);
         
         gl.bindFramebuffer(gl.FRAMEBUFFER, glShit.writeFBO);
@@ -40,29 +63,28 @@ class Neutron {
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
+        this.updateAtomMaskTexture(gl);
+
         gl.useProgram(glShit.simProgram);
 
-        // Pass per-rod Y positions (bottom threshold) to the shader.
-        // Prefer handle positions from the UI slider if available (handles hold bottom Y).
         const rodCount = controlRods.length;
         const rodYs = new Float32Array(rodCount || 1);
         for (let i = 0; i < rodCount; i++) {
-            if (typeof ui !== 'undefined' && ui.controlSlider && ui.controlSlider.handleY && ui.controlSlider.handleY.length > i) {
-                rodYs[i] = ui.controlSlider.handleY[i];
-            } else {
-                // Fallback: use rod bottom (top y + height)
-                rodYs[i] = controlRods[i].y + controlRods[i].height;
-            }
+            rodYs[i] = ui.controlSlider.handleY[i];
         }
         const uRodsLoc = gl.getUniformLocation(glShit.simProgram, "u_controlRods");
-        if (uRodsLoc) gl.uniform1fv(uRodsLoc, rodYs);
+        gl.uniform1fv(uRodsLoc, rodYs);
         const uRodCountLoc = gl.getUniformLocation(glShit.simProgram, "u_controlRodCount");
-        if (uRodCountLoc) gl.uniform1i(uRodCountLoc, rodCount);
+        gl.uniform1i(uRodCountLoc, rodCount);
 
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, glShit.readTex);
         gl.uniform1i(glShit.uNeutronsLoc, 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, glShit.atomMaskTex);
+        gl.uniform1i(gl.getUniformLocation(glShit.simProgram, "u_atomMask"), 1);
         gl.uniform1i(gl.getUniformLocation(glShit.simProgram, "u_uraniumCountX"), uraniumAtomsCountX);
+        gl.uniform1i(gl.getUniformLocation(glShit.simProgram, "u_uraniumCountY"), uraniumAtomsCountY);
         gl.uniform1f(gl.getUniformLocation(glShit.simProgram, "collision_prob"), settings.collisionProbability);
         gl.uniform1f(gl.getUniformLocation(glShit.simProgram, "controlRodHitProbability"), settings.controlRodHitProbability);
         gl.uniform1f(gl.getUniformLocation(glShit.simProgram, "controlRodAbsorptionProbability"), settings.controlRodAbsorptionProbability);
@@ -71,9 +93,10 @@ class Neutron {
         gl.uniform1f(gl.getUniformLocation(glShit.simProgram, "u_simHeight"), screenHeight);
         gl.uniform1f(gl.getUniformLocation(glShit.simProgram, "u_atomSpacingX"), uraniumAtomsSpacingX);
         gl.uniform1f(gl.getUniformLocation(glShit.simProgram, "u_atomSpacingY"), uraniumAtomsSpacingY);
-        // settings.uraniumSize is diameter, pass radius (approx 5 at base)
         gl.uniform1f(gl.getUniformLocation(glShit.simProgram, "u_atomRadius"), settings.uraniumSize / 2.0);
         gl.uniform1f(gl.getUniformLocation(glShit.simProgram, "u_globalScale"), globalScale);
+        // Hitbox Y scale (ellipse height multiplier)
+        gl.uniform1f(gl.getUniformLocation(glShit.simProgram, "u_hitboxYScale"), settings.hitboxYScale || 1.0);
 
         drawFullscreenQuad(gl);
 
@@ -85,13 +108,68 @@ class Neutron {
         const tmpFbo = glShit.readFBO;
         glShit.readFBO = glShit.writeFBO;
         glShit.writeFBO = tmpFbo;
+
+        // Flush batched spawns to GPU
+        this.flushSpawns(gl);
+    }
+
+    flushSpawns(gl) {
+        if (this.spawnQueue.length === 0) return;
+
+        // Sort by index to group consecutive spawns
+        this.spawnQueue.sort((a, b) => a.index - b.index);
+
+        // Group consecutive indices
+        const groups = [];
+        let currentGroup = [this.spawnQueue[0]];
+        for (let i = 1; i < this.spawnQueue.length; i++) {
+            if (this.spawnQueue[i].index === this.spawnQueue[i - 1].index + 1) {
+                currentGroup.push(this.spawnQueue[i]);
+            } else {
+                groups.push(currentGroup);
+                currentGroup = [this.spawnQueue[i]];
+            }
+        }
+        groups.push(currentGroup);
+
+        // Upload each group, split into per-row chunks
+        for (const group of groups) {
+            const startIndex = group[0].index;
+            const count = group.length;
+            let offset = 0;
+
+            while (offset < count) {
+                const index = startIndex + offset;
+                const texX = index % MAX_NEUTRONS;
+                const texY = Math.floor(index / MAX_NEUTRONS);
+                const spaceInRow = MAX_NEUTRONS - texX;
+                const chunkCount = Math.min(spaceInRow, count - offset);
+
+                const data = new Float32Array(chunkCount * 4);
+                for (let i = 0; i < chunkCount; i++) {
+                    const spawn = group[offset + i];
+                    const base = i * 4;
+                    data[base] = spawn.x;
+                    data[base + 1] = spawn.y;
+                    data[base + 2] = spawn.vx;
+                    data[base + 3] = spawn.vy;
+                }
+
+                gl.bindTexture(gl.TEXTURE_2D, glShit.readTex);
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, texX, texY, chunkCount, 1, gl.RGBA, gl.FLOAT, data);
+
+                gl.bindTexture(gl.TEXTURE_2D, glShit.writeTex);
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, texX, texY, chunkCount, 1, gl.RGBA, gl.FLOAT, data);
+
+                offset += chunkCount;
+            }
+        }
+
+        this.spawnQueue.length = 0;
     }
 
     draw(gl, { clear = true } = {}) {
-        // We do NOT clear or set Viewport here anymore (handled in sceneHelpers/drawScene)
-        // unless we really need to bind FBO null explicitly (which we do, but viewport is external)
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        // gl.viewport(...) -> REMOVED because we set the viewport for the SIMULATION area in drawScene
 
         if (clear) {
             gl.clearColor(0, 0, 0, 1);
@@ -100,23 +178,16 @@ class Neutron {
 
         gl.useProgram(glShit.renderProgram);
         gl.enable(gl.BLEND);
-        // Screen-like blending: 1 - (1 - S) * (1 - D)
         gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
         gl.uniform1i(glShit.uRenderTexSizeLoc, MAX_NEUTRONS);
-        // Res is screenSimWidth/Height for the shader logic to map pos -> Clip
         gl.uniform2f(glShit.uRenderResLoc, screenSimWidth, screenHeight);
         gl.uniform2f(glShit.uRenderSimSizeLoc, screenSimWidth, screenHeight);
         gl.uniform1f(glShit.uRenderNeutronSizeLoc, settings.neutronSize);
 
-        // Pass alpha from UI settings
-        let nAlpha = 1.0;
-        if (typeof ui !== 'undefined' && !!ui.canvas && !!ui.canvas.uiSettings && !!ui.canvas.uiSettings.video && ui.canvas.uiSettings.video.neutrons) {
-            nAlpha = ui.canvas.uiSettings.video.neutrons.vol;
-        }
-        
+        let nAlpha = ui.canvas.uiSettings.video.neutrons.vol;
         const uAlphaLoc = gl.getUniformLocation(glShit.renderProgram, "u_alpha");
-        if (uAlphaLoc) gl.uniform1f(uAlphaLoc, nAlpha);
+        gl.uniform1f(uAlphaLoc, nAlpha);
 
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, glShit.readTex);
@@ -125,6 +196,102 @@ class Neutron {
 
         gl.disable(gl.BLEND);
         gl.useProgram(null);
+    }
+
+    drawLightPass(gl) {
+        // Draw to light map FBO
+        gl.bindFramebuffer(gl.FRAMEBUFFER, glShit.lightFBO);
+        const lw = Math.floor(screenSimWidth / 8);
+        const lh = Math.floor(screenHeight / 8);
+        gl.viewport(0, 0, lw, lh);
+        
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.useProgram(glShit.neutronLightProgram);
+        gl.enable(gl.BLEND);
+        // Additive blending for light accumulation
+        gl.blendFunc(gl.ONE, gl.ONE);
+
+        gl.uniform1i(gl.getUniformLocation(glShit.neutronLightProgram, "u_textureSize"), MAX_NEUTRONS);
+        // Resolution is the sim size here so the vertices map correctly
+        gl.uniform2f(gl.getUniformLocation(glShit.neutronLightProgram, "u_resolution"), screenSimWidth, screenHeight);
+        gl.uniform2f(gl.getUniformLocation(glShit.neutronLightProgram, "u_simSize"), screenSimWidth, screenHeight);
+        // Larger points for the light map to create a soft glow
+        gl.uniform1f(gl.getUniformLocation(glShit.neutronLightProgram, "u_neutronSize"), settings.neutronSize * 4.0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, glShit.readTex);
+        gl.uniform1i(gl.getUniformLocation(glShit.neutronLightProgram, "u_neutrons"), 0);
+
+        gl.drawArrays(gl.POINTS, 0, MAX_NEUTRONS_SQUARED);
+
+        // --- NEW: Add Special Items Lighting ---
+        const specialItems = [];
+        if (typeof plutonium !== 'undefined') specialItems.push(plutonium);
+        if (typeof californium !== 'undefined') specialItems.push(californium);
+        
+        if (specialItems.length > 0) {
+            gl.useProgram(glShit.specialLightProgram);
+            
+            // Reuse instance data logic but for light pass
+            const tempRenderer = new SpecialRenderer();
+            tempRenderer.gl = gl;
+            tempRenderer.program = glShit.specialLightProgram;
+            tempRenderer.instanceBuffer = specialRenderer.instanceBuffer;
+            tempRenderer.instanceData = specialRenderer.instanceData;
+            tempRenderer.maxInstances = specialRenderer.maxInstances;
+            tempRenderer.instanceFloatCount = specialRenderer.instanceFloatCount;
+            
+            const activeCount = tempRenderer.updateInstances(specialItems);
+            // Size them up for bigger light spread
+            for(let i=0; i<activeCount; i++) {
+                tempRenderer.instanceData[i * 8 + 6] *= 5.0; 
+            }
+            
+            tempRenderer.draw(activeCount, { blendMode: 'additive' });
+        }
+        // ----------------------------------------
+
+        // --- NEW: Add Rod Lighting ---
+        if (controlRods.length > 0) {
+            gl.useProgram(glShit.specialLightProgram);
+            
+            const tr = new RodsRenderer();
+            tr.gl = gl;
+            tr.program = glShit.specialLightProgram;
+            tr.instanceBuffer = rodsRenderer.instanceBuffer;
+            tr.instanceData = rodsRenderer.instanceData;
+            tr.maxInstances = rodsRenderer.maxInstances;
+            tr.instanceFloatCount = rodsRenderer.instanceFloatCount;
+            
+            // Only draw types 0 (rod) and 1 (sphere) for lighting
+            const count = tr.updateInstances(controlRods, null);
+            for(let i=0; i<count; i++) {
+                const b = i * 9;
+                // Expand light emission area
+                tr.instanceData[b + 6] *= 4.0; 
+                tr.instanceData[b + 7] *= 1.2;
+                // intensity boost via color alpha if the shader supports it, 
+                // but specialLightFrag just uses vColor.rgb * 0.02.
+            }
+            tr.draw(count, { blendMode: 'additive' });
+        }
+        // ----------------------------------------
+
+        // Now compute vector field from light map
+        gl.bindFramebuffer(gl.FRAMEBUFFER, glShit.vectorFieldFBO);
+        gl.useProgram(glShit.lightVectorProgram);
+        gl.disable(gl.BLEND);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, glShit.lightTex);
+        gl.uniform1i(gl.getUniformLocation(glShit.lightVectorProgram, "u_lightMap"), 0);
+        gl.uniform2f(gl.getUniformLocation(glShit.lightVectorProgram, "u_resolution"), lw, lh);
+
+        drawFullscreenQuad(gl);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     readFrameBuffer(gl) {
@@ -144,12 +311,10 @@ class Neutron {
     }
 
     updateInTexture(gl, index, x, y, vx, vy) {
-        // Ensure we write to the current input texture.
         gl.bindTexture(gl.TEXTURE_2D, glShit.readTex);
 
         const data = new Float32Array([x, y, vx, vy]);
 
-        // Convert linear index (0...MAX^2) to 2D texture coordinates.
         const texX = index % MAX_NEUTRONS;
         const texY = Math.floor(index / MAX_NEUTRONS);
 
@@ -182,16 +347,14 @@ class Neutron {
         gl.bindTexture(gl.TEXTURE_2D, null);
     }
 
-    spawn(x, y, atomRadius) {
+    spawn(x, y, atomRadius, direction=Math.random() * Math.PI * 2) {
         this.spawnCount++;
-        // Ring-buffer index.
         this.currentIndex = (this.currentIndex + 1) % MAX_NEUTRONS_SQUARED;
 
-        const angle = Math.random() * Math.PI * 2;
+        const angle = direction;
         const vx = Math.cos(angle) * settings.neutronSpeed;
         const vy = Math.sin(angle) * settings.neutronSpeed;
 
-        // Spawn just outside the atom.
         const spawnOffset = atomRadius * 2;
         const finalX = x + Math.cos(angle) * spawnOffset;
         const finalY = y + Math.sin(angle) * spawnOffset;
@@ -202,7 +365,14 @@ class Neutron {
         this.buffer[i + 2] = vx;
         this.buffer[i + 3] = vy;
 
-        this.updateInTexture(glShit.simGL, this.currentIndex, finalX, finalY, vx, vy);
+        // Queue for batched GPU update
+        this.spawnQueue.push({
+            index: this.currentIndex,
+            x: finalX,
+            y: finalY,
+            vx: vx,
+            vy: vy
+        });
     }
 }
 

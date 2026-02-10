@@ -1,55 +1,64 @@
-// === Screen constants ===
-let screenHeight = 600;
+let screenHeight = 900;
 let screenWidth = Math.floor(screenHeight * 1.7778);
 let screenSimWidth = Math.floor(screenHeight * (4 / 3));
 let SHOP_WIDTH = screenWidth - screenSimWidth;
 let controlRodsStartPos = -screenHeight * .9;
-
-const waterColor = [52, 95, 120];
-
-// Global scale factor (1.0 when height == 600)
 let globalScale = screenHeight / 600;
 
 const defaultSettings = {
-  neutronSpeed: 5, // Restored to original speed now that simulation is fixed
+  neutronSpeed: 5,
   collisionProbability: 0.055,
   decayProbability: 0.0001,
   controlRodAbsorptionProbability: 0.1,
   controlRodHitProbability: 0.325,
-  waterFlowSpeed: 0.3,
-  heatingRate: 50,
-  uraniumToWaterHeatTransfer: 0.3,
-  heatTransferCoefficient: 0.04,
-  inletTemperature: 15,
+  waterFlowSpeed: 0.15,
+  heatingRate: 150,
+  uraniumToWaterHeatTransfer: 0.2,
+  heatTransferCoefficient: 0.14, //water to water
+  inletTemperature: 25,
   moneyExponent: 1.5,
   uraniumSize: 10,
   neutronSize: 30,
-  neutronsDownSizeMaxAmount:5000,
+  neutronsDownSizeMaxAmount: 5000,
+  hitboxYScale: 2.6,
   linkRods: false,
   cheatMode: false
 };
 let settings = { ...defaultSettings };
 
-// === Runtime state ===
 let uraniumAtoms = [];
 let controlRods = [];
+let controlRodSlotXs = [];
+let controlRodPurchaseCount = 0;
+let controlRodUpgradeLevels = [];
 let waterCells = [];
 let grid;
 var boom = false;
 var boomStartTime = 0;
-let font;
 var energyOutput = 0;
 let energyThisFrame = 0;
-var energyOutputCounter = 0; // accumulator: sum(power_kW * dt) over the second
+var energyOutputCounter = 0;
 let lastMoneyPerSecond = 0;
 let paused = false;
 var renderTime = 0;
-window.currentNeutronSizeMultiplier = 1;
-
-// Loading screen variables
-let loading = true;
+// States: LOADING, TITLE, PLAYING
+let gameState = 'LOADING';
 
 let waterSystem;
+let plutonium;
+let californium;
+// let titleRenderer; // Removed to use window.titleRenderer directly
+
+function setUiVisibility(visible) {
+  const uiLayer = document.getElementById('ui-layer');
+  if (uiLayer) {
+    uiLayer.style.display = visible ? 'block' : 'none';
+  }
+  const uiCanvas = document.getElementById('UI-Canvas');
+  if (uiCanvas) {
+    uiCanvas.style.display = visible ? 'block' : 'none';
+  }
+}
 
 
 const ui = {
@@ -65,13 +74,10 @@ const ui = {
   controlSlider: null
 };
 
-//game variables
 const game = {
-  // threshold in physical kW (1 MW = 1000 kW)
   boomValue: 1000
 }
 
-//scene variables
 const uraniumAtomsCountX = 41;
 const uraniumAtomsCountY = 30;
 let uraniumAtomsSpacingX;
@@ -82,17 +88,12 @@ let controlRodHeight;
 const NEUTRON_STRIDE = 4;
 const MAX_NEUTRONS = 512;
 const MAX_NEUTRONS_SQUARED = MAX_NEUTRONS * MAX_NEUTRONS;
-// let neutron;
-
-
 function updateDimensions() {
-  // Use manual `screenWidth` and `screenHeight` values set at top of file.
   screenWidth = Math.floor(screenHeight * 1.7778);
   screenSimWidth = Math.floor(screenHeight * (4 / 3));
   SHOP_WIDTH = screenWidth - screenSimWidth;
   screenRenderWidth = screenWidth;
 
-  // update the single global scale value (base height = 600 => scale 1)
   globalScale = screenHeight / 600;
 
   uraniumAtomsSpacingX = screenSimWidth / uraniumAtomsCountX;
@@ -102,40 +103,108 @@ function updateDimensions() {
   controlRodHeight = 600 * globalScale;
   controlRodsStartPos = -screenHeight * 0.9;
 
-  settings.uraniumSize = settings.uraniumSize * globalScale;
-  settings.neutronSize = settings.neutronSize * globalScale;
-  settings.neutronSpeed = settings.neutronSpeed * globalScale;
-  console.log("sss")
+  settings.uraniumSize = defaultSettings.uraniumSize * globalScale;
+  settings.neutronSize = defaultSettings.neutronSize * globalScale;
+  settings.neutronSpeed = defaultSettings.neutronSpeed * globalScale;
+
+  if (plutonium) plutonium.updateDimensions();
+
+  if (californium) californium.updateDimensions();
 }
 
 function setup() {
   updateDimensions();
 
-  //debug(); //DO NOT REMOVE THIS LINE
+  // Resize DOM elements to match resolution
+  const container = document.getElementById('canvas-container');
+  container.style.width = screenWidth + 'px';
+  container.style.height = screenHeight + 'px';
+
+  const loadingPanel = document.getElementById('loading-panel');
+  loadingPanel.style.width = (360 * globalScale) + 'px';
+  loadingPanel.style.height = (260 * globalScale) + 'px';
+
+  const loadingTitle = document.getElementById('loading-title');
+  loadingTitle.style.fontSize = (48 * globalScale) + 'px';
+
+  const loadingSubtitle = document.getElementById('loading-subtitle');
+  loadingSubtitle.style.fontSize = (20 * globalScale) + 'px';
+
+  const loadingBarContainer = document.getElementById('loading-bar-container');
+  loadingBarContainer.style.width = (220 * globalScale) + 'px';
+  loadingBarContainer.style.height = (20 * globalScale) + 'px';
+
+  const loadingPercentage = document.getElementById('loading-percentage');
+  loadingPercentage.style.fontSize = (16 * globalScale) + 'px';
+
+  const loadingTask = document.getElementById('loading-task');
+  loadingTask.style.fontSize = (16 * globalScale) + 'px';
+
+  const loadingStartBtn = document.getElementById('loading-start-btn');
+  loadingStartBtn.style.fontSize = (18 * globalScale) + 'px';
+  loadingStartBtn.style.padding = (12 * globalScale) + 'px ' + (28 * globalScale) + 'px';
+
   noCanvas(); //For mouse etc, do not remove
 
   const gameCnv = document.getElementById('gameCanvas');
-  if (gameCnv) {
-    gameCnv.width = screenRenderWidth;
-    gameCnv.height = screenHeight;
-  }
+  gameCnv.width = screenRenderWidth;
+  gameCnv.height = screenHeight;
+
+  plutonium = new Plutonium();
+  californium = new Californium();
+  californium.updateDimensions();
+  plutonium.updateDimensions();
+  // Show loading screen after we've resized DOM to avoid tiny flicker
+  const loadingScreen = document.getElementById('loading-screen');
+  if (loadingScreen) loadingScreen.style.display = 'flex';
+
+  // Start loading now that canvas/DOM are correctly sized
+  (async () => {
+    await loader.startLoading(loadingTasks, () => {
+      gameState = 'PLAYING';
+      setUiVisibility(true);
+
+      const loadingScreen = document.getElementById('loading-screen');
+      if (loadingScreen) loadingScreen.style.display = 'none';
+
+      // Stop the title renderer/cleanup if needed?
+      // titleRenderer.cleanup(); 
+
+      audioManager.startAmbience();
+    });
+
+    // Tasks finished, now showing title screen while waiting for Start click
+    gameState = 'TITLE';
+    setUiVisibility(false);
+    // Show title save-slot selection overlay
+    try {
+      if (ui && ui.canvas && typeof ui.canvas.showTitleSlotMenu === 'function') ui.canvas.showTitleSlotMenu();
+    } catch (e) { /* ignore if UI not ready */ }
+
+  })();
 }
 
-(async () => {
-  await loader.startLoading(loadingTasks, () => {
-    loading = false;
-    document.getElementById('loading-screen').style.display = 'none';
-    audioManager.startAmbience();
-  });
-})();
-
 function draw() {
-  if (loading) {
+  if (gameState === 'LOADING') {
+    return;
+  }
+
+  if (gameState === 'TITLE') {
+    if (window.titleRenderer) {
+      const gl = window.titleRenderer.gl;
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      // Update title renderer
+      window.titleRenderer.update(deltaTime / 1000.0, mouseX, mouseY, gl.canvas.width, gl.canvas.height);
+      window.titleRenderer.draw(gl.canvas.width, gl.canvas.height);
+    }
     return;
   }
 
   if (!paused) {
-    if (typeof deltaTime !== 'undefined') renderTime += deltaTime / 1000.0;
+    renderTime += deltaTime / 1000.0;
 
     // Update CPU-side state
     updateScene();
@@ -143,11 +212,69 @@ function draw() {
     if (boom && boomStartTime == 0) {
       boomStartTime = renderTime;
       audioManager.playSfx('boom');
+      try {
+          const selected = (playerState && typeof playerState.getSelectedSlot === 'function') ? playerState.getSelectedSlot() : 0;
+          if (playerState && typeof playerState.saveGame === 'function') playerState.saveGame(selected);
+      } catch (e) { /* ignore */ }
     }
   }
 
-  // Core layer (steam + atom cores) on coreCanvas
-  // This draws the scene using 'renderTime' (if updated in sceneHelpers)
-  // and draws the UI/Pause Menu on top
+  audioManager.update(deltaTime, settings, energyOutput, paused, game.boomValue);
+
   drawScene();
+}
+
+function windowResized() {
+  updateDimensions();
+
+  // Resize canvas
+  const gameCnv = document.getElementById('gameCanvas');
+  gameCnv.width = screenRenderWidth;
+  gameCnv.height = screenHeight;
+
+  // Resize DOM elements
+  const container = document.getElementById('canvas-container');
+  container.style.width = screenWidth + 'px';
+  container.style.height = screenHeight + 'px';
+
+  // If loading screen is visible, resize it too
+  if (gameState === 'LOADING' || gameState === 'TITLE') {
+    const loadingPanel = document.getElementById('loading-panel');
+    loadingPanel.style.width = (360 * globalScale) + 'px';
+    loadingPanel.style.height = (260 * globalScale) + 'px';
+
+    const loadingTitle = document.getElementById('loading-title');
+    loadingTitle.style.fontSize = (48 * globalScale) + 'px';
+
+    const loadingSubtitle = document.getElementById('loading-subtitle');
+    loadingSubtitle.style.fontSize = (20 * globalScale) + 'px';
+
+    const loadingBarContainer = document.getElementById('loading-bar-container');
+    loadingBarContainer.style.width = (220 * globalScale) + 'px';
+    loadingBarContainer.style.height = (20 * globalScale) + 'px';
+
+    const loadingPercentage = document.getElementById('loading-percentage');
+    loadingPercentage.style.fontSize = (16 * globalScale) + 'px';
+
+    const loadingTask = document.getElementById('loading-task');
+    loadingTask.style.fontSize = (16 * globalScale) + 'px';
+
+    const loadingStartBtn = document.getElementById('loading-start-btn');
+    loadingStartBtn.style.fontSize = (18 * globalScale) + 'px';
+    loadingStartBtn.style.padding = (12 * globalScale) + 'px ' + (28 * globalScale) + 'px';
+    loadingStartBtn.style.marginTop = '0px';
+
+    const loadingStart = document.getElementById('loading-start');
+    // Position start button at 15% from bottom of the canvas
+    loadingStart.style.position = 'absolute';
+    loadingStart.style.bottom = '15%';
+    loadingStart.style.left = '50%';
+    loadingStart.style.transform = 'translateX(-50%)';
+    loadingStart.style.display = 'block';
+    loadingStart.style.width = 'auto';
+  }
+
+  // Update dimensions for objects
+  if (plutonium) plutonium.updateDimensions();
+  if (californium) californium.updateDimensions();
 }

@@ -4,7 +4,7 @@ class ControlRod {
         this.y = y;
         this.width = controlRodWidth;
         this.height = controlRodHeight;
-        this.color = { r: 44, g: 22, b: 4, a: 255 };
+        this.color = { r: 60, g: 70, b: 90, a: 255 }; // Metallic Dark Blue-Gray
         this.initialY = y;
         this.targetY = y;
         this.movementSpeed = 1;
@@ -33,86 +33,92 @@ class ControlRod {
 
 class ControlRodsSlider {
     constructor() {
-        this.x = 15;
+        this.x = 15 * globalScale;
         this.y = controlRodsStartPos;
-        this.handleY = []; // per-rod handle (bottom Y) in simulation coords
-        this.draggingIndex = -1; // -1 = none
-        // Initialize handles to match current rods if available
-        if (typeof controlRods !== 'undefined' && controlRods.length > 0) {
-            this.handleY = [];
-            for (let i = 0; i < controlRods.length; i++) {
-                const r = controlRods[i];
-                this.handleY.push(r.y + r.height);
-            }
+        this.handleY = [];
+        this.draggingIndex = -1;
+
+        this.ensureHandleLength();
+    }
+
+    ensureHandleLength() {
+        const prev = this.handleY || [];
+        this.handleY = new Array(controlRods.length).fill(null);
+        for (let i = 0; i < controlRods.length; i++) {
+            const rod = controlRods[i];
+            const prevVal = prev[i];
+            const rawHandle = (typeof prevVal === 'number') ? prevVal : (rod.y + rod.height);
+            const clampedHandle = clampControlRodHandleY(i, rawHandle);
+            this.handleY[i] = clampedHandle;
+            rod.targetY = this.handleY[i] - rod.height;
         }
     }
 
-    draw(ctx, offsetX) {
+    draw(ctx, offsetX, skipDraw = false) {
         const simMousePos = scaleMouse(mouseX, mouseY);
-
-        // Ensure handle array length matches rods
-        if (!this.handleY || this.handleY.length !== controlRods.length) {
-            this.handleY = [];
-            for (let i = 0; i < controlRods.length; i++) {
-                const r = controlRods[i];
-                this.handleY.push(r.y + r.height);
-            }
-        }
+        this.ensureHandleLength();
 
         const HANDLE_RADIUS = 10 * globalScale;
 
         ctx.save();
 
-        // Input handling: start drag if pressed and not already dragging
-        if (mouseIsPressed && this.draggingIndex === -1) {
-            if (typeof paused !== 'undefined' && paused) {
-                // Do not allow grabbing when paused
-            } else {
+        const scramActive = ui.canvas.scramActive;
+        if (scramActive && this.draggingIndex !== -1) {
+            this.draggingIndex = -1;
+        }
+
+        if (mouseIsPressed && this.draggingIndex === -1 && (!ui.canvas.activeDrag || ui.canvas.activeDrag.type === 'controlRod')) {
+            if (!paused && !scramActive) {
                 for (let i = 0; i < controlRods.length; i++) {
                     const rod = controlRods[i];
                     const handleX = rod.x + rod.width / 2;
-                    const handleY = this.handleY[i];
+                    const handleY = (typeof this.handleY[i] === 'number') ? this.handleY[i] : (rod.y + rod.height);
                     const dx = simMousePos.x - handleX;
                     const dy = simMousePos.y - handleY;
-                    if (Math.sqrt(dx * dx + dy * dy) <= HANDLE_RADIUS + 4) { //grab the balls
-                    //if (-dx <= HANDLE_RADIUS && dx <= HANDLE_RADIUS) {//grab anywhere in y direction
+                    if (Math.sqrt(dx * dx + dy * dy) <= HANDLE_RADIUS + 4 * globalScale) { //grab the balls
                         this.draggingIndex = i;
+                        ui.canvas.activeDrag = { type: 'controlRod', index: i };
                         break;
                     }
                 }
             }
         }
 
-        // While dragging, move handle instantly with mouse and set rod target accordingly
         if (this.draggingIndex !== -1 && mouseIsPressed) {
+            if (scramActive) {
+                this.draggingIndex = -1;
+                ctx.restore();
+                return;
+            }
             const i = this.draggingIndex;
-            // Clamp handle to simulation vertical bounds
-            const newY = Math.min(Math.max(simMousePos.y, 0), screenHeight);
-            // If 'link-rods' is checked in settings, move all handles to same Y
+            const newY = simMousePos.y;
             const linked = settings.linkRods;
 
             if (linked) {
                 for (let j = 0; j < this.handleY.length; j++) {
-                    this.handleY[j] = newY;
-                    if (controlRods[j]) controlRods[j].targetY = this.handleY[j] - controlRods[j].height;
+                    this.handleY[j] = clampControlRodHandleY(j, newY);
+                    controlRods[j].targetY = this.handleY[j] - controlRods[j].height;
                 }
             } else {
-                this.handleY[i] = newY;
-                // Set rod's target to follow (top = bottom - height)
-                if (controlRods[i]) controlRods[i].targetY = this.handleY[i] - controlRods[i].height;
+                this.handleY[i] = clampControlRodHandleY(i, newY);
+                controlRods[i].targetY = this.handleY[i] - controlRods[i].height;
             }
         }
 
-        // Release
         if (!mouseIsPressed && this.draggingIndex !== -1) {
             this.draggingIndex = -1;
+            if (ui.canvas && ui.canvas.activeDrag && ui.canvas.activeDrag.type === 'controlRod') ui.canvas.activeDrag = null;
         }
 
-        // Draw handles (below rods)
+        if (skipDraw) {
+            ctx.restore();
+            return;
+        }
+
         for (let i = 0; i < controlRods.length; i++) {
             const rod = controlRods[i];
             const drawX = offsetX + rod.x + rod.width / 2;
-            const drawY = this.handleY[i];
+            const drawY = (typeof this.handleY[i] === 'number') ? this.handleY[i] : (rod.y + rod.height);
 
             ctx.globalAlpha = 0.5;
             ctx.fillStyle = 'red';
@@ -125,3 +131,65 @@ class ControlRodsSlider {
         ctx.restore();
     }
 }
+const CONTROL_ROD_UPGRADE_SEQUENCE = [1, 3, 0, 4, 1, 3];
+const CONTROL_ROD_STEP = 0.05;
+const CONTROL_ROD_SIDE_BASE = 0.25;
+const CONTROL_ROD_SIDE_CAP = 1.0;
+
+function getControlRodCenterIndex() {
+    return Math.floor(controlRodCount / 2);
+}
+
+function getControlRodMaxPercent(index) {
+    const centerIndex = getControlRodCenterIndex();
+    if (index === centerIndex) return 1.0;
+    const level = controlRodUpgradeLevels[index] || 0;
+    return Math.min(CONTROL_ROD_SIDE_CAP, CONTROL_ROD_SIDE_BASE + level * CONTROL_ROD_STEP);
+}
+
+function clampControlRodHandleY(index, desiredY) {
+    const maxPercent = getControlRodMaxPercent(index);
+    const maxY = screenHeight * maxPercent;
+    const clamped = Math.min(Math.max(desiredY, 0), maxY);
+    return clamped;
+}
+
+function getMaxControlRodPurchases() {
+    const centerIndex = getControlRodCenterIndex();
+    const maxPerRod = Math.max(0, Math.floor((CONTROL_ROD_SIDE_CAP - CONTROL_ROD_SIDE_BASE) / CONTROL_ROD_STEP));
+    return (controlRodCount - 1) * maxPerRod;
+}
+
+function applyControlRodPurchase() {
+    const maxPurchases = getMaxControlRodPurchases();
+    if (controlRodPurchaseCount >= maxPurchases) return false;
+
+    const seqIndex = controlRodPurchaseCount % CONTROL_ROD_UPGRADE_SEQUENCE.length;
+    const rodIndex = CONTROL_ROD_UPGRADE_SEQUENCE[seqIndex];
+    if (!controlRodUpgradeLevels || controlRodUpgradeLevels.length !== controlRodCount) {
+        controlRodUpgradeLevels = new Array(controlRodCount).fill(0);
+    }
+    controlRodUpgradeLevels[rodIndex] = (controlRodUpgradeLevels[rodIndex] || 0) + 1;
+    controlRodPurchaseCount++;
+
+    player.rodCount = controlRodPurchaseCount;
+    ui.controlSlider.ensureHandleLength();
+
+    return true;
+}
+
+function initControlRodUpgrades() {
+    controlRodUpgradeLevels = new Array(controlRodCount).fill(0);
+    controlRodPurchaseCount = player.rodCount;
+    for (let i = 0; i < controlRodPurchaseCount; i++) {
+        const seqIndex = i % CONTROL_ROD_UPGRADE_SEQUENCE.length;
+        const rodIndex = CONTROL_ROD_UPGRADE_SEQUENCE[seqIndex];
+        controlRodUpgradeLevels[rodIndex] = (controlRodUpgradeLevels[rodIndex] || 0) + 1;
+    }
+
+    ui.controlSlider.ensureHandleLength();
+}
+
+window.applyControlRodPurchase = applyControlRodPurchase;
+window.initControlRodUpgrades = initControlRodUpgrades;
+window.getMaxControlRodPurchases = getMaxControlRodPurchases;

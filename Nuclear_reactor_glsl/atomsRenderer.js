@@ -11,13 +11,9 @@ class AtomsRenderer {
     }
 
     init(simGL, maxInst, vsSource, fsSource) {
-        if (!simGL) return false;
         this.gl = simGL;
         this.maxInstances = maxInst || 2048;
         this.instanceData = new Float32Array(this.maxInstances * this.instanceFloatCount);
-        if (!vsSource || !fsSource) {
-            throw new Error('atomsRenderer shader sources missing');
-        }
         this.program = createProgram(this.gl, vsSource, fsSource);
 
         // Quad (6 verts)
@@ -85,15 +81,17 @@ class AtomsRenderer {
             this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
         }
 
+        let writeIndex = 0;
         for (let i = 0; i < count; i++) {
             const a = atoms[i];
-            const base = i * this.instanceFloatCount;
+            if (a.hasAtom === false) continue;
+            const base = writeIndex * this.instanceFloatCount;
             this.instanceData[base + 0] = a.position.x;
             this.instanceData[base + 1] = a.position.y;
             // color object -> components 0..255
-            const r = (a.color && typeof a.color.r !== 'undefined') ? (a.color.r / 255.0) : 0.0;
-            const g = (a.color && typeof a.color.g !== 'undefined') ? (a.color.g / 255.0) : 0.0;
-            const b = (a.color && typeof a.color.b !== 'undefined') ? (a.color.b / 255.0) : 0.0;
+            const r = a.color.r / 255.0;
+            const g = a.color.g / 255.0;
+            const b = a.color.b / 255.0;
             const alpha = (a.flash > 0) ? 1.0 : 1.0;
             this.instanceData[base + 2] = r;
             this.instanceData[base + 3] = g;
@@ -101,18 +99,18 @@ class AtomsRenderer {
             this.instanceData[base + 5] = alpha;
             this.instanceData[base + 6] = a.radius * 2.0; // size diameter
             this.instanceData[base + 7] = (a.flash > 0) ? 1.0 : 0.0;
+            writeIndex += 1;
         }
 
         // Upload to GPU
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.instanceBuffer);
-        this.gl.bufferSubData(this.gl.ARRAY_BUFFER, 0, this.instanceData, 0, count * this.instanceFloatCount);
+        this.gl.bufferSubData(this.gl.ARRAY_BUFFER, 0, this.instanceData, 0, writeIndex * this.instanceFloatCount);
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
 
-        return count;
+        return writeIndex;
     }
 
     draw(count, { blendMode = 'additive' } = {}) {
-        if (!this.gl || !this.program) return;
         this.gl.useProgram(this.program);
         this.gl.bindVertexArray(this.vao);
         const uResLoc = this.gl.getUniformLocation(this.program, 'u_resolution');
@@ -125,6 +123,17 @@ class AtomsRenderer {
         this.gl.uniform1f(rendHeightLoc, screenHeight);
         const rendWidthLoc = this.gl.getUniformLocation(this.program, "render_width");
         this.gl.uniform1f(rendWidthLoc, screenSimWidth);
+
+        const shopWidthLoc = this.gl.getUniformLocation(this.program, "u_shopWidth");
+        if (shopWidthLoc) this.gl.uniform1f(shopWidthLoc, SHOP_WIDTH);
+
+        // Pass the light vector field
+        if (glShit.vectorFieldTex) {
+            const uVectorLoc = this.gl.getUniformLocation(this.program, "u_vectorField");
+            this.gl.activeTexture(this.gl.TEXTURE0);
+            this.gl.bindTexture(this.gl.TEXTURE_2D, glShit.vectorFieldTex);
+            this.gl.uniform1i(uVectorLoc, 0);
+        }
 
         if (blendMode && blendMode !== 'none') {
             this.gl.enable(this.gl.BLEND);

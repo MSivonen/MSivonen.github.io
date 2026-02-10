@@ -1,40 +1,46 @@
 function oncePerSecond() {
     if (millis() - ui.prevTime >= 1000) {
-        // Compute per-second average physical power (kW)
         const elapsed = ui.accumulatedTime || 0;
         const avgPhysicalKW = (elapsed > 0) ? (energyOutputCounter / elapsed) : 0;
-        energyOutput = avgPhysicalKW; // store as physical kW
+        energyOutput = avgPhysicalKW;
 
-        // Money: exponential mapping with threshold (discard under 10 kW)
         let moneyThisSecond = 0;
         if (energyOutput >= 10) {
             moneyThisSecond = Math.pow(energyOutput / 100.0, settings.moneyExponent);
         }
         lastMoneyPerSecond = moneyThisSecond;
-        if (typeof player !== 'undefined' && player && typeof player.addMoney === 'function') {
-            player.addMoney(moneyThisSecond);
-        }
+        player.addMoney(moneyThisSecond);
 
-        // Reset accumulators
         energyOutputCounter = 0;
         ui.accumulatedTime = 0;
 
-        // FPS bookkeeping
         ui.avgFps = ui.framesCounted;
         ui.framesCounted = 0;
         ui.prevTime = millis();
 
-        // Capture collisions before reset
         const collisionsThisSecond = ui.collisionsThisSecond;
 
-        if (typeof updateCountersHTML === 'function') updateCountersHTML();
-        // Bomb check: energyOutput is in physical kW, boomValue is kW
+        // Autosave every 60 seconds to the selected slot
+        ui.autosaveCounter = (ui.autosaveCounter || 0) + 1;
+        try {
+            const selected = (playerState && typeof playerState.getSelectedSlot === 'function') ? playerState.getSelectedSlot() : 0;
+            if (ui.autosaveCounter >= 60) {
+                ui.autosaveCounter = 0;
+                if (playerState && typeof playerState.saveGame === 'function') {
+                    playerState.saveGame(selected);
+                    try { if (ui && ui.canvas && typeof ui.canvas.showToast === 'function') ui.canvas.showToast(`Autosaved to slot ${selected + 1}`, 2000); } catch (e) {}
+                }
+            }
+        } catch (e) { /* ignore autosave errors */ }
+
         if (energyOutput >= game.boomValue) boom = true;
 
-        // Calculate neutron size based on collisions per second
         const collisionFactor = Math.min(1, collisionsThisSecond / settings.neutronsDownSizeMaxAmount); // 0 at 0 collisions, 1 at 500+
         const targetMultiplier = 1 - (collisionFactor * 0.7); // 1.0 to 0.3
-        settings.neutronSize = defaultSettings.neutronSize * targetMultiplier * globalScale;
+        // Set target size; actual `settings.neutronSize` will smoothly interpolate towards this.
+        settings.targetNeutronSize = defaultSettings.neutronSize * targetMultiplier * globalScale;
+        // Reset the per-second collision counter so size can recover next second
+        ui.collisionsThisSecond = 0;
     } else {
         ui.framesCounted++;
     }
@@ -50,52 +56,58 @@ function formatLarge(amount, unit, decimals=2) {
 }
 
 function resetSimulation() {
-    // Fade out boom if active
-    audioManager.fadeOutSfx('boom', 2.0); // 1.0 second fade out
+    audioManager.fadeOutSfx('boom', 2.0);
     
+    // Reset atom heat and visual state
     for (let atom of uraniumAtoms) {
-        atom.temperature = 25;
+        if (atom) {
+            atom.heat = 25;
+            atom.isHit = false;
+            atom.flash = 0;
+        }
     }
-    // Reset control rods to their initial positions and reset slider handles
+    // Reset water cell temperatures
+    if (waterSystem && waterSystem.waterCells) {
+        for (let wc of waterSystem.waterCells) {
+            if (wc) wc.temperature = 25;
+        }
+    }
     controlRods.forEach((rod, i) => {
-        if (typeof rod.initialY !== 'undefined') {
-            rod.y = rod.initialY;
-            rod.targetY = rod.initialY;
-        } else {
-            rod.targetY = -100;
-        }
+        rod.y = rod.initialY;
+        rod.targetY = rod.initialY;
     });
-    if (ui && ui.controlSlider) {
-        ui.controlSlider.draggingIndex = -1;
-        if (ui.controlSlider.handleY && ui.controlSlider.handleY.length === controlRods.length) {
-            for (let i = 0; i < controlRods.length; i++) {
-                ui.controlSlider.handleY[i] = controlRods[i].y + controlRods[i].height;
-            }
-        }
-    }
+    ui.controlSlider.draggingIndex = -1;
+    ui.controlSlider.ensureHandleLength();
     settings = { ...defaultSettings };
-    initializeControls();
+    settings.waterFlowSpeed = player.waterFlowStart;
+    settings.waterFlowSpeed = Math.max(player.waterFlowMin, Math.min(player.waterFlowMax, settings.waterFlowSpeed));
+    // Initialize neutron size target to default scaled value
+    settings.neutronSize = defaultSettings.neutronSize * globalScale;
+    settings.targetNeutronSize = settings.neutronSize;
     boom = false;
-    boomStartTime = 0; // Reset the boom animation timer
+    boomStartTime = 0;
     energyOutput = 0;
     energyOutputCounter = 0;
 }
 
 function eventListeners() {
-    //-----pause-----
+    const pauseForVisibility = () => {
+        paused = true;
+        ui.canvas.pauseMenuState = 'MAIN';
+        audioManager.stopAllImmediate();
+    };
+
     document.addEventListener("visibilitychange", () => {
-        paused = document.hidden;
-        if (!paused) last = performance.now();
+        if (document.hidden) {
+            pauseForVisibility();
+        } else {
+            paused = true;
+        }
     });
-    window.addEventListener("blur", () => paused = true);
+    window.addEventListener("blur", pauseForVisibility);
     window.addEventListener("focus", () => {
-        paused = false;
-        last = performance.now();
+        paused = true;
     });
-    //-----pause-----
-
-
-
 }
 
 function scaleMouse(xx, yy) {

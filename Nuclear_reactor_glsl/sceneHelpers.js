@@ -1,139 +1,137 @@
-// Helpers to cleanly initialize and run per-frame logic for the sketch
-
 function initShadersAndGL() {
-    // SINGLE CANVAS REFACTOR
     glShit.gameCanvas = document.getElementById("gameCanvas");
+    glShit.gameCanvas.width = screenWidth;
+    glShit.gameCanvas.height = screenHeight;
 
-    // Set size to match screen settings
-    if (glShit.gameCanvas) {
-        glShit.gameCanvas.width = screenRenderWidth;
-        glShit.gameCanvas.height = screenHeight;
+    gl = glShit.gameCanvas.getContext("webgl2", {
+        alpha: false,
+        depth: false,
+        antialias: false,
+        preserveDrawingBuffer: true,
+        premultipliedAlpha: true,
+    });
 
-        // Create ONE WebGL2 context
-        gl = glShit.gameCanvas.getContext("webgl2", {
-            alpha: false, // Opaque canvas
-            depth: false, // We handle layering manually / painter's algorithm
-            antialias: false,
-            preserveDrawingBuffer: true,
-            premultipliedAlpha: true,
-        });
-    } else {
-        console.error("Game canvas not found!");
-        return;
-    }
-
-    if (!gl) {
-        console.error("WebGL2 not supported");
-        return;
-    }
-
-    // Provide this single context to all "legacy" slots so existing renderers work
     glShit.waterGL = gl;
     glShit.simGL = gl;
     glShit.coreGL = gl;
 
-    // Provide the single canvas to all "legacy" canvas slots (for width/height checks)
     glShit.waterCanvas = glShit.gameCanvas;
     glShit.simCanvas = glShit.gameCanvas;
     glShit.coreCanvas = glShit.gameCanvas;
 
-    // Ensure required extension present (no-op if not)
     gl.getExtension("EXT_color_buffer_float");
 
-    // Initialize water background layer (fullscreen shader)
-    if (typeof waterLayer !== 'undefined') {
-        try {
-            waterLayer.init(gl, glShit.shaderCodes.waterVertCode, glShit.shaderCodes.waterFragCode);
-        } catch (e) {
-            console.warn('waterLayer init failed', e);
-        }
-    }
+    waterLayer.init(gl, glShit.shaderCodes.waterVertCode, glShit.shaderCodes.waterFragCode);
 
     glShit.simProgram = createProgram(gl, glShit.shaderCodes.simVertCode, glShit.shaderCodes.simFragCode);
     glShit.reportProgram = createProgram(gl, glShit.shaderCodes.reportVertCode, glShit.shaderCodes.reportFragCode);
     glShit.explosionProgram = createProgram(gl, glShit.shaderCodes.explosionVertCode, glShit.shaderCodes.explosionFragCode);
-
+    glShit.neutronLightProgram = createProgram(gl, glShit.shaderCodes.rendVertCode, glShit.shaderCodes.neutronLightFragCode);
+    glShit.lightVectorProgram = createProgram(gl, glShit.shaderCodes.simVertCode, glShit.shaderCodes.lightVectorFragCode);
+    glShit.specialLightProgram = createProgram(gl, glShit.shaderCodes.atomsVertCode, glShit.shaderCodes.specialLightFragCode);
     glShit.uNeutronsLoc = gl.getUniformLocation(glShit.simProgram, "u_neutrons");
 
-    // Ensure neutron instance exists or create a temp helper if needed
-    // But ideally neutron is instantiated in setup(). 
-    // Here we are in initShadersAndGL() which runs inside loadingTasks
-    if (typeof neutron === 'undefined' || !neutron) {
-        // Create a temporary instance just for the texture helper methods if needed
-        // Or better yet, ensure neutron is global. 
-        // We will assume "Neutron" class is loaded (fixed in index.html)
-        // and create a local instance if the global isn't ready.
-        if (typeof Neutron !== 'undefined') {
-            globalThis.neutron = new Neutron();
-        }
-    }
-
-    // Simulation textures (still use FBOs for simulation steps, that's fine)
     glShit.readTex = neutron.createTexture(gl, neutron.buffer);
     glShit.writeTex = neutron.createTexture(gl, null);
 
     glShit.readFBO = createFBO(gl, glShit.readTex);
     glShit.writeFBO = createFBO(gl, glShit.writeTex);
 
+    glShit.atomMaskTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, glShit.atomMaskTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        uraniumAtomsCountX,
+        uraniumAtomsCountY,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        null
+    );
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    glShit.atomMaskData = new Uint8Array(uraniumAtomsCountX * uraniumAtomsCountY * 4);
+
     initRenderShader(gl, glShit.shaderCodes.rendVertCode, glShit.shaderCodes.rendFragCode);
     reportSystem.init(gl);
 
-    // Initialize GPU instanced atom renderer (fallback to CPU if fails)
-    try {
-        if (typeof atomsRenderer !== 'undefined') {
-            atomsRenderer.init(
-                gl,
-                uraniumAtomsCountX * uraniumAtomsCountY,
-                glShit.shaderCodes.atomsVertCode,
-                glShit.shaderCodes.atomsFragCode
-            );
-            glShit.useInstancedAtoms = true;
-        }
-    } catch (e) {
-        console.warn('atomsRenderer init failed, falling back to CPU draw', e);
-        glShit.useInstancedAtoms = false;
-    }
+    // Light map setup (1/8 resolution)
+    const lw = Math.floor(screenSimWidth / 8);
+    const lh = Math.floor(screenHeight / 8);
+    glShit.lightTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, glShit.lightTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, lw, lh, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    glShit.lightFBO = createFBO(gl, glShit.lightTex);
 
-    // Atom core renderer 
-    try {
-        if (typeof AtomsRenderer !== 'undefined') {
-            glShit.atomsCoreRenderer = new AtomsRenderer();
-            glShit.atomsCoreRenderer.init(
-                gl,
-                uraniumAtomsCountX * uraniumAtomsCountY,
-                glShit.shaderCodes.atomsVertCode,
-                glShit.shaderCodes.atomsCoreFragCode
-            );
-            glShit.useCoreAtoms = true;
-        }
-    } catch (e) {
-        console.warn('atoms core renderer init failed, falling back to glow-only', e);
-        glShit.useCoreAtoms = false;
-    }
+    glShit.vectorFieldTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, glShit.vectorFieldTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, lw, lh, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    glShit.vectorFieldFBO = createFBO(gl, glShit.vectorFieldTex);
 
-    // Steam renderer 
-    if (typeof steamRenderer !== 'undefined') {
-        steamRenderer.init(
-            gl,
-            uraniumAtomsCountX * uraniumAtomsCountY,
-            glShit.shaderCodes.steamVertCode,
-            glShit.shaderCodes.steamFragCode
-        );
-        glShit.useGpuSteam = true;
-    }
+    atomsRenderer.init(
+        gl,
+        uraniumAtomsCountX * uraniumAtomsCountY,
+        glShit.shaderCodes.atomsVertCode,
+        glShit.shaderCodes.atomsFragCode
+    );
+    glShit.useInstancedAtoms = true;
 
-    if (typeof bubblesRenderer !== 'undefined') {
-        bubblesRenderer.init(
-            gl,
-            5000,
-            glShit.shaderCodes.bubblesVertCode,
-            glShit.shaderCodes.bubblesFragCode
-        );
-    }
+    glShit.atomsCoreRenderer = new AtomsRenderer();
+    glShit.atomsCoreRenderer.init(
+        gl,
+        uraniumAtomsCountX * uraniumAtomsCountY,
+        glShit.shaderCodes.atomsVertCode,
+        glShit.shaderCodes.atomsCoreFragCode
+    );
+    glShit.useCoreAtoms = true;
+
+    specialRenderer.init(
+        gl,
+        16,
+        glShit.shaderCodes.specialVertCode,
+        glShit.shaderCodes.specialFragCode
+    );
+
+    rodsRenderer.init(
+        gl,
+        64, 
+        glShit.shaderCodes.rodsVertCode,
+        glShit.shaderCodes.rodsFragCode
+    );
+
+    steamRenderer.init(
+        gl,
+        uraniumAtomsCountX * uraniumAtomsCountY,
+        glShit.shaderCodes.steamVertCode,
+        glShit.shaderCodes.steamFragCode
+    );
+    glShit.useGpuSteam = true;
+
+    bubblesRenderer.init(
+        gl,
+        5000,
+        glShit.shaderCodes.bubblesVertCode,
+        glShit.shaderCodes.bubblesFragCode
+    );
 }
 
 function initSimulationObjects() {
-    // Water cells
+    controlRodSlotXs = [];
+    controlRods = new Array(controlRodCount).fill(null);
+    controlRodPurchaseCount = 0;
+    controlRodUpgradeLevels = [];
+
     for (let y = 0; y < uraniumAtomsCountY; y++) {
         for (let x = 0; x < uraniumAtomsCountX; x++) {
             let waterCellX = x * uraniumAtomsSpacingX;
@@ -144,24 +142,36 @@ function initSimulationObjects() {
     waterSystem = new WaterSystem();
     waterSystem.init(waterCells);
 
-    // Uranium atoms and control rods
+    let groupIndex = 0;
+    let colInGroup = 0;
     for (let x = 0; x < uraniumAtomsCountX; x++) {
         if ((x + 1) % 7 === 0) {
-            controlRods.push(new ControlRod(x * uraniumAtomsSpacingX + controlRodWidth / 2, controlRodsStartPos));
+            controlRodSlotXs.push(x * uraniumAtomsSpacingX + controlRodWidth / 2);
+            groupIndex += 1;
+            colInGroup = 0;
         } else {
             for (let y = 0; y < uraniumAtomsCountY; y++) {
                 let waterCellIndex = x + y * uraniumAtomsCountX;
                 let waterCell = waterCells[waterCellIndex];
                 let uraniumX = x * uraniumAtomsSpacingX + uraniumAtomsSpacingX / 2;
                 let uraniumY = y * uraniumAtomsSpacingY + uraniumAtomsSpacingY / 2;
-                let atom = new UraniumAtom(uraniumX, uraniumY, waterCell);
+                let atom = new UraniumAtom(uraniumX, uraniumY, waterCell, false, groupIndex);
                 atom.index = x + y * uraniumAtomsCountX;
+                atom.colInGroup = colInGroup;
+                atom.rowInGroup = y;
                 uraniumAtoms.push(atom);
             }
+            colInGroup += 1;
         }
     }
 
-    // Spatial grid
+    buildAtomGroups();
+
+    for (let i = 0; i < controlRodCount; i++) {
+        const slotX = controlRodSlotXs[i];
+        controlRods[i] = new ControlRod(slotX, controlRodsStartPos);
+    }
+
     grid = new Grid(uraniumAtomsSpacingX);
     for (let atom of uraniumAtoms) {
         grid.addAtom(atom);
@@ -169,19 +179,12 @@ function initSimulationObjects() {
 }
 
 function initUiObjects() {
-    // UI + graphics helpers
-    initializeControls();
     ui.powerMeter = new PowerMeter(globalScale * 730, globalScale * 530);
     ui.tempMeter = new TempMeter(globalScale * 600, globalScale * 530);
     ui.controlSlider = new ControlRodsSlider();
-    // This creates an offscreen 2D canvas now (per ui.js changes)
     ui.canvas = new UICanvas();
 
-    // Init the overlay shader for drawing the UI texture
-    if (typeof uiOverlay !== 'undefined' && glShit.gameCanvas) {
-        const gl = glShit.gameCanvas.getContext('webgl2');
-        uiOverlay.init(gl);
-    }
+    uiOverlay.init(gl);
 }
 
 
@@ -195,87 +198,111 @@ function updateScene() {
     let totalHeat = 0;
     uraniumAtoms.forEach(s => {
         s.update();
-        totalHeat += s.heat;
+        if (s.hasAtom) totalHeat += s.heat;
     });
     window.avgTemp = uraniumAtoms.length > 0 ? totalHeat / uraniumAtoms.length : 0;
-    controlRods.forEach(s => s.update());
+    controlRods.forEach(rod => rod.update());
+    if (plutonium) plutonium.update();
+    if (californium) californium.update();
 
-    // Combined water update (conduction, flow, energy)
     energyThisFrame = waterSystem.update(deltaTime, settings);
 
-    // Accumulate physical kW * seconds so we can compute exact per-second averages
-    let dt = (typeof deltaTime !== 'undefined') ? (deltaTime / 1000.0) : (1.0 / 60.0);
+    let dt = deltaTime / 1000.0;
     if (dt <= 0) dt = 1.0 / 60.0;
     energyOutputCounter += energyThisFrame * dt;
-    if (typeof ui.accumulatedTime === 'undefined') ui.accumulatedTime = 0;
     ui.accumulatedTime += dt;
-    if (ui.powerMeter) ui.powerMeter.update();
-    if (ui.tempMeter) ui.tempMeter.update();
+    ui.powerMeter.update();
+    ui.tempMeter.update();
     oncePerSecond();
+
+    // Smooth neutron size toward target over 5 seconds to prevent flickering
+    if (typeof settings.targetNeutronSize !== 'undefined') {
+        let sec = deltaTime / 1000.0;
+        if (sec <= 0) sec = 1.0 / 60.0;
+        const smoothTime = 5.0; // seconds to reach target
+        const frac = Math.min(1.0, sec / smoothTime);
+        settings.neutronSize += (settings.targetNeutronSize - settings.neutronSize) * frac;
+    }
 }
 
 function drawScene() {
     const gl = glShit.waterGL; // They are all the same now
 
-    // 1. Clear the entire frame (Color + Depth if checking it, but we don't)
+    // 1. Generate Light Map from Neutrons
+    const vidSettings = ui.canvas.uiSettings.video;
+    const lightingEnabled = !!vidSettings.lighting;
+    if (lightingEnabled) {
+        neutron.drawLightPass(gl);
+        glShit.lightingPrev = true;
+    } else {
+        if (glShit.lightingPrev) {
+            const lw = Math.floor(screenSimWidth / 8);
+            const lh = Math.floor(screenHeight / 8);
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, glShit.lightFBO);
+            gl.viewport(0, 0, lw, lh);
+            gl.clearColor(0.0, 0.0, 0.0, 0.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, glShit.vectorFieldFBO);
+            gl.viewport(0, 0, lw, lh);
+            gl.clearColor(0.0, 0.0, 0.0, 0.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            glShit.lightingPrev = false;
+        }
+    }
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, glShit.gameCanvas.width, glShit.gameCanvas.height);
-    gl.clearColor(0.2, 0.3, 0.4, 1.0); // Default background if water fails, but waterLayer should cover it
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT);
-
-    // RENDER LAYERS
-    // IMPORTANT: The Simulation Area (Sim) is offset by SHOP_WIDTH.
-    // We must adjust viewport for Sim layers so coordinate (0,0) in Sim matches (SHOP_WIDTH, 0) on screen.
-    // GL viewport is (x, y, w, h). y=0 is bottom.
-    // ui.js defines simXOffset = SHOP_WIDTH.
 
     const simX = SHOP_WIDTH;
     const simW = screenSimWidth;
     const simH = screenHeight;
 
-    // 2. Render Water Background (Opaque)
-    const vidSettings = (ui && ui.canvas && ui.canvas.uiSettings && ui.canvas.uiSettings.video) ? ui.canvas.uiSettings.video : null;
-
-    if (!vidSettings || vidSettings.waterEffect) {
+    if (vidSettings.waterEffect) {
         gl.viewport(simX, 0, simW, simH);
         gl.disable(gl.BLEND);
         renderWaterLayer();
     }
+    
+    gl.viewport(simX, 0, simW, simH);
+    renderAtomCoreLayer();
 
-    // 3. Render Bubbles (Alpha Blend)
-    if (!vidSettings || vidSettings.bubbles) {
+    gl.viewport(simX, 0, simW, simH);
+    renderSpecialLayer();
+
+    gl.viewport(simX, 0, simW, simH);
+    renderRodsLayer();
+
+    if (vidSettings.bubbles) {
         gl.viewport(simX, 0, simW, simH);
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         renderBubblesLayer();
     }
 
-    // 4. Render Steam (Alpha Blend)
-    if (!vidSettings || vidSettings.steam) {
+
+    if (vidSettings.steam) {
         gl.viewport(simX, 0, simW, simH);
         renderSteamLayer();
     }
 
-    // 5. Render Atom Cores (Alpha Blend - Opaque sprites)
-    gl.viewport(simX, 0, simW, simH);
-    renderAtomCoreLayer();
-
-    // 6. Render Atom GLOWS (Additive)
-    if (!vidSettings || vidSettings.atomGlow) {
+    if (vidSettings.atomGlow) {
         gl.viewport(simX, 0, simW, simH);
         gl.blendFunc(gl.ONE, gl.ONE);
         renderAtomGlowLayer();
     }
 
-    // 7. Render Neutrons (Additive or Alpha blended based on shader)
-    // Neutrons setting is now an object { vol: alpha, enabled: bool }
-    const showNeutrons = (!vidSettings) || (vidSettings.neutrons && vidSettings.neutrons.enabled);
+    const showNeutrons = vidSettings.neutrons && vidSettings.neutrons.enabled;
     if (showNeutrons) {
         gl.viewport(simX, 0, simW, simH);
         renderNeutronLayer();
     }
 
-    // 8. Explosion (Alpha Blend for proper alpha)
     if (boom) {
         gl.viewport(simX, 0, simW, simH);
         gl.enable(gl.BLEND);
@@ -283,29 +310,16 @@ function drawScene() {
         renderExplosionLayer();
     }
 
-    // 9. UI Overlay (Normal Alpha Blend)
-    // First, draw the UI components to the offscreen 2D canvas
-    if (ui && ui.canvas) {
-        ui.canvas.drawBorders();
-        ui.canvas.drawUi();
+    ui.canvas.drawBorders();
+    ui.canvas.drawUi();
 
-        // Then draw that canvas as a texture over the scene
-        // UI is Full Screen (includes shop)
-        if (typeof uiOverlay !== 'undefined') {
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null); // ensure we are on screen
-            // Reset viewport to full screen for UI
-            gl.viewport(0, 0, glShit.gameCanvas.width, glShit.gameCanvas.height);
-            uiOverlay.render(gl, ui.canvas.canvas);
-        }
-    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, glShit.gameCanvas.width, glShit.gameCanvas.height);
+    uiOverlay.render(gl, ui.canvas.canvas);
 }
 function renderExplosionLayer() {
     if (!boom) return;
     const gl = glShit.simGL;
-    if (!gl || !glShit.explosionProgram) return;
-    // ensureSimLayerCleared(gl); -> Removed
-
-    // Define sim dimensions (same as in drawScene)
     const simX = SHOP_WIDTH;
     const simW = screenSimWidth;
     const simH = screenHeight;
@@ -315,19 +329,14 @@ function renderExplosionLayer() {
     // Set uniforms
     const u_resolution = gl.getUniformLocation(glShit.explosionProgram, "u_resolution");
     gl.uniform2f(u_resolution, simW, simH);
-
     const u_viewportX = gl.getUniformLocation(glShit.explosionProgram, "u_viewportX");
     gl.uniform1f(u_viewportX, simX);
-
     const u_viewportY = gl.getUniformLocation(glShit.explosionProgram, "u_viewportY");
     gl.uniform1f(u_viewportY, 0);
-
     const u_time = gl.getUniformLocation(glShit.explosionProgram, "u_time");
-    gl.uniform1f(u_time, (typeof renderTime !== 'undefined') ? renderTime : millis() / 1000.0);
-
+    gl.uniform1f(u_time, renderTime);
     const u_shopWidth = gl.getUniformLocation(glShit.explosionProgram, "u_shopWidth");
     gl.uniform1f(u_shopWidth, SHOP_WIDTH);
-
     const u_elapsed = gl.getUniformLocation(glShit.explosionProgram, "u_elapsed");
     let elapsed = 0;
     if (boomStartTime > 0) {
@@ -336,65 +345,48 @@ function renderExplosionLayer() {
     }
     gl.uniform1f(u_elapsed, elapsed);
 
-    // Draw fullscreen quad
     drawFullscreenQuad(gl);
 }
 function renderWaterLayer() {
-    // Uses waterGL (same as main)
-    if (typeof waterLayer !== 'undefined' && waterLayer.render) {
-        waterLayer.render((typeof renderTime !== 'undefined') ? renderTime : millis() / 1000.0);
-    }
+    waterLayer.render(renderTime);
 }
 
 function renderBubblesLayer() {
-    if (typeof bubblesRenderer !== 'undefined' && glShit.waterCanvas) {
-        // We must pass SIM dimensions (width, height), not Full or "Canvas" dimensions.
-        // bubblesRenderer uses these for u_resolution to scale particles 0..Width -> -1..1
-        bubblesRenderer.updateSpeeds(settings.waterFlowSpeed, (typeof renderTime !== 'undefined') ? renderTime : millis() / 1000.0);
-        bubblesRenderer.render(screenSimWidth, screenHeight, (typeof renderTime !== 'undefined') ? renderTime : millis() / 1000.0);
-    }
+    bubblesRenderer.updateSpeeds(settings.waterFlowSpeed, renderTime);
+    bubblesRenderer.render(screenSimWidth, screenHeight, renderTime);
+}
+
+function renderSpecialLayer() {
+    const items = [];
+    if (plutonium) items.push(plutonium);
+    if (californium) items.push(californium);
+    const activeCount = specialRenderer.updateInstances(items);
+    specialRenderer.draw(activeCount, { blendMode: 'alpha' });
+}
+
+function renderRodsLayer() {
+    const activeCount = rodsRenderer.updateInstances(controlRods, ui.controlSlider);
+    rodsRenderer.draw(activeCount);
 }
 
 function renderSteamLayer() {
     if (!glShit.useGpuSteam) return;
-    // ensureCoreLayerCleared(gl); -> Removed
-    if (typeof steamRenderer !== 'undefined') {
-        steamRenderer.updateInstances(waterCells);
-        steamRenderer.draw();
-    }
+    steamRenderer.updateInstances(waterCells);
+    steamRenderer.draw();
 }
 
 function renderAtomCoreLayer() {
     if (!glShit.useCoreAtoms || !glShit.atomsCoreRenderer) return;
-    // ensureCoreLayerCleared(gl); -> Removed
-    glShit.atomsCoreRenderer.updateInstances(uraniumAtoms);
-    glShit.atomsCoreRenderer.draw(uraniumAtoms.length, { blendMode: 'alpha' });
+    const activeCount = glShit.atomsCoreRenderer.updateInstances(uraniumAtoms);
+    glShit.atomsCoreRenderer.draw(activeCount, { blendMode: 'alpha' });
 }
 
 function renderAtomGlowLayer() {
     if (!glShit.useInstancedAtoms) return;
-    // ensureSimLayerCleared(gl); -> Removed
-    if (typeof atomsRenderer !== 'undefined') {
-        atomsRenderer.updateInstances(uraniumAtoms);
-        atomsRenderer.draw(uraniumAtoms.length, { blendMode: 'additive' });
-    }
+    const activeCount = atomsRenderer.updateInstances(uraniumAtoms);
+    atomsRenderer.draw(activeCount, { blendMode: 'additive' });
 }
 
 function renderNeutronLayer() {
-    // ensureSimLayerCleared(gl); -> Removed
     neutron.draw(glShit.simGL, { clear: false });
 }
-
-// These are now handled inside drawScene logic for UI
-function renderBordersLayer() {
-    // No-op here, called in drawScene
-}
-
-function renderUiLayer() {
-    // No-op here, called in drawScene
-}
-
-// Deprecated clearing functions - kept as no-ops or just frame trackers if needed
-function ensureWaterLayerCleared(gl) { return; }
-function ensureCoreLayerCleared(gl) { return; }
-function ensureSimLayerCleared(gl) { return; }
