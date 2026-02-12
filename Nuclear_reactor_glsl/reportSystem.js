@@ -67,16 +67,19 @@ class ReportSystem {
 
         const writePBOIndex = glShit.reportPBOIndex;
         const writePBO = glShit.reportPBOs[writePBOIndex];
-        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, writePBO);
-        gl.bufferData(gl.PIXEL_PACK_BUFFER, glShit.reportPBOSize, gl.STREAM_READ);
-        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+        let kickedWrite = false;
 
-        gl.flush();
-        const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-        if (glShit.reportPBOSyncs[writePBOIndex]) {
-            gl.deleteSync(glShit.reportPBOSyncs[writePBOIndex]);
+        // Don't overwrite a PBO that is still in-flight.
+        if (!glShit.reportPBOSyncs[writePBOIndex]) {
+            gl.bindBuffer(gl.PIXEL_PACK_BUFFER, writePBO);
+            gl.bufferData(gl.PIXEL_PACK_BUFFER, glShit.reportPBOSize, gl.STREAM_READ);
+            gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+
+            gl.flush();
+            const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+            glShit.reportPBOSyncs[writePBOIndex] = sync;
+            kickedWrite = true;
         }
-        glShit.reportPBOSyncs[writePBOIndex] = sync;
 
         const readPBOIndex = (writePBOIndex + 1) % 2;
         const readPBO = glShit.reportPBOs[readPBOIndex];
