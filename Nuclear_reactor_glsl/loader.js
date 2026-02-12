@@ -33,13 +33,16 @@ const loader = {
     loadingStartDiv.style.bottom = '15%';
     loadingStartDiv.style.left = '50%';
     loadingStartDiv.style.transform = 'translateX(-50%)';
-    loadingStartDiv.style.display = 'block';
+    loadingStartDiv.style.display = 'flex';
     loadingStartDiv.style.width = 'auto';
     loadingStartDiv.style.flex = '0 0 auto';
     loadingStartDiv.style.alignItems = 'center';
 
+    // Force reflow to ensure opacity 0 takes effect before transition
+    void loadingStartDiv.offsetWidth;
+
     // Execute Fade In (Title & Buttons)
-    // Small timeout to ensure display:block is applied before transition
+    // Small timeout to ensure display:flex is applied before transition
     setTimeout(() => {
         if (fadeOverlay) fadeOverlay.style.opacity = '0';
         loadingStartDiv.style.opacity = '1';
@@ -56,7 +59,10 @@ const loader = {
       }
       
       // Start Fade Out (Title -> Black)
-      if (fadeOverlay) fadeOverlay.style.opacity = '1';
+      if (fadeOverlay) {
+        fadeOverlay.style.zIndex = '3000';
+        fadeOverlay.style.opacity = '1';
+      }
 
       setTimeout(() => {
         paused = false;
@@ -67,7 +73,10 @@ const loader = {
 
         // Start Fade In (Black -> Game)
         setTimeout(() => {
-            if (fadeOverlay) fadeOverlay.style.opacity = '0';
+            if (fadeOverlay) {
+              fadeOverlay.style.zIndex = '2000';
+              fadeOverlay.style.opacity = '0';
+            }
         }, 100);
 
       }, 1000); // Wait for 1s fade
