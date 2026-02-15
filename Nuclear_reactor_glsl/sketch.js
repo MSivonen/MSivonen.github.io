@@ -7,7 +7,7 @@ let globalScale = screenHeight / 600;
 
 const defaultSettings = {
   neutronSpeed: 5,
-  collisionProbability: 0.055,
+  collisionProbability: 0.071,
   decayProbability: 0.0001,
   controlRodAbsorptionProbability: 0.1,
   controlRodHitProbability: 0.325,
@@ -30,19 +30,26 @@ let uraniumAtoms = [];
 let controlRods = [];
 let controlRodSlotXs = [];
 let controlRodPurchaseCount = 0;
+let controlRodUpgradePurchaseCount = 0;
 let controlRodUpgradeLevels = [];
 let waterCells = [];
 let grid;
-var boom = false;
-var boomStartTime = 0;
-var energyOutput = 0;
+let boom = false;
+let boomStartTime = 0;
+let boomOutcome = 'NONE';
+let boomInputLocked = false;
+let boomPrestigePopupShown = false;
+let boomSetbackLoss = 0;
+let boomShowFailedPrestigeLore = false;
+let energyOutput = 0;
 let energyThisFrame = 0;
-var energyOutputCounter = 0;
+let energyOutputCounter = 0;
 let lastMoneyPerSecond = 0;
 let paused = false;
-var renderTime = 0;
-// States: LOADING, TITLE, PLAYING
+let renderTime = 0;
 let gameState = 'LOADING';
+let prestigeTransitionStartedAt = -1;
+let prestigeScreen = null;
 
 let waterSystem;
 let plutonium;
@@ -53,6 +60,10 @@ function setUiVisibility(visible) {
   const uiLayer = document.getElementById('ui-layer');
   if (uiLayer) {
     uiLayer.style.display = visible ? 'block' : 'none';
+  }
+  const shopOverlay = document.getElementById('ui-shop-overlay');
+  if (shopOverlay) {
+    shopOverlay.style.display = visible ? '' : 'none';
   }
   const uiCanvas = document.getElementById('UI-Canvas');
   if (uiCanvas) {
@@ -77,6 +88,74 @@ const ui = {
 const game = {
   boomValue: 1000
 }
+
+function drawTitleRockBackground() {
+  if (!window.titleRenderer) return;
+  const gl = window.titleRenderer.gl;
+  gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  window.titleRenderer.update(deltaTime / 1000.0, mouseX, mouseY, gl.canvas.width, gl.canvas.height);
+  if (typeof window.titleRenderer.drawRockBackground === 'function') {
+    window.titleRenderer.drawRockBackground(gl.canvas.width, gl.canvas.height);
+  } else {
+    window.titleRenderer.draw(gl.canvas.width, gl.canvas.height);
+  }
+}
+
+function clearMainCanvasBlack() {
+  if (!window.titleRenderer || !window.titleRenderer.gl) return;
+  const gl = window.titleRenderer.gl;
+  gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+}
+
+function beginPrestigeTransition() {
+  if (gameState === 'PRESTIGE_TRANSITION' || gameState === 'PRESTIGE') return;
+  gameState = 'PRESTIGE_TRANSITION';
+  prestigeTransitionStartedAt = renderTime;
+  setUiVisibility(false);
+  if (ui && ui.canvas && ui.canvas.canvas) {
+    ui.canvas.canvas.style.display = 'block';
+  }
+}
+
+function runPrestigeTransition() {
+  if (!prestigeScreen) return;
+  const elapsed = Math.max(0, renderTime - prestigeTransitionStartedAt);
+  const visuals = prestigeScreen.getTransitionVisuals(elapsed);
+
+  if (visuals.showBoom) {
+    drawScene();
+  } else if (visuals.showPrestige) {
+    drawTitleRockBackground();
+    const coords = (typeof getRelativeMouseCoords === 'function') ? getRelativeMouseCoords() : { x: mouseX, y: mouseY };
+    prestigeScreen.updateHover(coords.x, coords.y);
+    prestigeScreen.drawPrestigeScreen(visuals.prestigeAlpha);
+  } else {
+    clearMainCanvasBlack();
+    prestigeScreen.clearOverlayCanvas();
+  }
+
+  prestigeScreen.drawGreenOverlay(visuals.greenAlpha);
+
+  if (visuals.done) {
+    gameState = 'PRESTIGE';
+  }
+}
+
+function transitionToPlayingFromPrestige() {
+  gameState = 'PLAYING';
+  prestigeTransitionStartedAt = -1;
+  setUiVisibility(true);
+  if (ui && ui.canvas && ui.canvas.canvas) {
+    ui.canvas.canvas.style.display = 'none';
+  }
+  paused = false;
+}
+
+window.transitionToPlayingFromPrestige = transitionToPlayingFromPrestige;
 
 const uraniumAtomsCountX = 41;
 const uraniumAtomsCountY = 30;
@@ -146,7 +225,15 @@ function setup() {
 
   plutonium = new Plutonium();
   californium = new Californium();
+  prestigeScreen = (typeof PrestigeScreen !== 'undefined') ? new PrestigeScreen() : null;
+  window.prestigeScreen = prestigeScreen;
   californium.updateDimensions();
+  if (typeof plutonium.syncFromPlayer === 'function') {
+    plutonium.syncFromPlayer();
+  }
+  if (typeof californium.syncFromPlayer === 'function') {
+    californium.syncFromPlayer();
+  }
   plutonium.updateDimensions();
   // Show loading screen after we've resized DOM to avoid tiny flicker
   const loadingScreen = document.getElementById('loading-screen');
@@ -161,13 +248,13 @@ function setup() {
       const loadingScreen = document.getElementById('loading-screen');
       if (loadingScreen) loadingScreen.style.display = 'none';
 
-      // Stop the title renderer/cleanup if needed?
-      // titleRenderer.cleanup(); 
-
       audioManager.startAmbience();
+
+      if (window.tutorialManager && typeof window.tutorialManager.onRunStarted === 'function') {
+        window.tutorialManager.onRunStarted();
+      }
     });
 
-    // Tasks finished, now showing title screen while waiting for Start click
     gameState = 'TITLE';
     setUiVisibility(false);
     // Show title save-slot selection overlay
@@ -197,19 +284,32 @@ function draw() {
     return;
   }
 
+  if (gameState === 'PRESTIGE_TRANSITION') {
+    if (!paused) {
+      renderTime += deltaTime / 1000.0;
+    }
+    runPrestigeTransition();
+    return;
+  }
+
+  if (gameState === 'PRESTIGE') {
+    drawTitleRockBackground();
+    if (prestigeScreen) {
+      const coords = (typeof getRelativeMouseCoords === 'function') ? getRelativeMouseCoords() : { x: mouseX, y: mouseY };
+      prestigeScreen.updateHover(coords.x, coords.y);
+      prestigeScreen.drawPrestigeScreen(1);
+    }
+    return;
+  }
+
   if (!paused) {
     renderTime += deltaTime / 1000.0;
 
-    // Update CPU-side state
-    updateScene();
-
-    if (boom && boomStartTime == 0) {
-      boomStartTime = renderTime;
-      audioManager.playSfx('boom');
-      try {
-          const selected = (playerState && typeof playerState.getSelectedSlot === 'function') ? playerState.getSelectedSlot() : 0;
-          if (playerState && typeof playerState.saveGame === 'function') playerState.saveGame(selected);
-      } catch (e) { /* ignore */ }
+    if (!boom) {
+      updateScene();
+    } else if (boomOutcome === 'PRESTIGE' && boomStartTime > 0 && (renderTime - boomStartTime) >= 3) {
+      beginPrestigeTransition();
+      return;
     }
   }
 

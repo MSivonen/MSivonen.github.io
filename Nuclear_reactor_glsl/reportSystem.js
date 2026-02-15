@@ -127,6 +127,44 @@ class ReportSystem {
         }
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
+
+    reset(gl) {
+        const activeGl = gl || glShit.simGL;
+        if (!activeGl) return;
+
+            glShit.reportData.fill(0);
+
+        if (glShit.reportPBOSyncs && Array.isArray(glShit.reportPBOSyncs)) {
+            for (let i = 0; i < glShit.reportPBOSyncs.length; i++) {
+                const sync = glShit.reportPBOSyncs[i];
+                if (sync) {
+                    activeGl.deleteSync(sync);
+                    glShit.reportPBOSyncs[i] = null;
+                }
+            }
+        }
+
+        if (glShit.reportPBOs && Array.isArray(glShit.reportPBOs)) {
+            for (let i = 0; i < glShit.reportPBOs.length; i++) {
+                const pbo = glShit.reportPBOs[i];
+                if (!pbo) continue;
+                activeGl.bindBuffer(activeGl.PIXEL_PACK_BUFFER, pbo);
+                activeGl.bufferData(activeGl.PIXEL_PACK_BUFFER, glShit.reportPBOSize || 0, activeGl.STREAM_READ);
+            }
+            activeGl.bindBuffer(activeGl.PIXEL_PACK_BUFFER, null);
+        }
+
+        if (glShit.reportFBO) {
+            activeGl.bindFramebuffer(activeGl.FRAMEBUFFER, glShit.reportFBO);
+            activeGl.viewport(0, 0, uraniumAtomsCountX, uraniumAtomsCountY);
+            activeGl.clearColor(0, 0, 0, 0);
+            activeGl.clear(activeGl.COLOR_BUFFER_BIT);
+            activeGl.bindFramebuffer(activeGl.FRAMEBUFFER, null);
+        }
+
+        glShit.reportPBOIndex = 0;
+        glShit.reportPBOPrimed = false;
+    }
 }
 
 const reportSystem = new ReportSystem();

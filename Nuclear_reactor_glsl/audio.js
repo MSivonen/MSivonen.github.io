@@ -173,7 +173,8 @@ class AudioManager {
     }
 
     playSfx(key) {
-        if (this.prevPaused && key !== 'click' && key !== 'click_fail') return;
+        const isGamePaused = (typeof paused !== 'undefined') ? !!paused : false;
+        if (this.prevPaused && isGamePaused && key !== 'click' && key !== 'click_fail') return;
 
         let sfxEnabled = true;
         let sfxVol = ui.canvas.uiSettings.audio.sfx.vol;
@@ -227,17 +228,11 @@ class AudioManager {
             this.prevPaused = false;
         }
 
-        // If BOOM (Game Over), stopping ambience is fine, but we might want the boom sound to play!
-        // The original code muted ambience on boom.
         if (boom) {
             this.ambientTracks.forEach(track => {
                 track.targetVolume = 0;
                 track.update(0.2);
             });
-            // Don't return, allow alarm/boom logic potentially? 
-            // Actually original code returned. But playSfx('boom') is called in sketch.js.
-            // Let's keep existing boom behavior for now but respect pause.
-            // If boom is true, game is over.
             this.alarmIntensity = 0;
             if (this.sounds['alarm'].isPlaying()) {
                 this.fadeOutSfx('alarm', 0.2);
@@ -250,10 +245,8 @@ class AudioManager {
         // Drive game state logic for volumes
         this.updateMixLogic(settings, currentPower, maxPowerRef);
 
-        // Alarm SFX (ramped by intensity)
         this.updateAlarm(masterVol);
 
-        // Update all tracks
         this.ambientTracks.forEach(track => track.update(masterVol));
     }
 
@@ -281,14 +274,9 @@ class AudioManager {
         // Steam starts at 100C, full intensity at 80% of max temp (400C)
         const tempLimit = 500;
         const fadeStart = 80;
-        const fadeEnd = tempLimit * 0.6; // Full steam slightly before max temp
+        const fadeEnd = tempLimit * 0.8; // Full steam slightly before max temp
 
         const steamIntensity = constrain(map(window.avgTemp || 0, fadeStart, fadeEnd, 0, 1), 0, 1);
-
-        // steam_low (cool) -> steam_mid -> steam_high
-        // 0.0 - 0.4: Low
-        // 0.3 - 0.7: Mid
-        // 0.6 - 1.0: High
 
         let sLow = 0, sMid = 0, sHigh = 0, sBubbles = 0;
 
@@ -313,7 +301,12 @@ class AudioManager {
         this.setGroupTarget('steam', 'steam_bubbles1', sBubbles * 0.8);
 
         // --- Alarm ---
-        const alarmLimit = maxPowerRef || 1000;
+        const powerLimitFromMeter = (typeof ui !== 'undefined' && ui && ui.powerMeter && Number.isFinite(ui.powerMeter.max))
+            ? ui.powerMeter.max
+            : NaN;
+        const alarmLimit = (Number.isFinite(maxPowerRef) && maxPowerRef > 0)
+            ? maxPowerRef
+            : (Number.isFinite(powerLimitFromMeter) && powerLimitFromMeter > 0 ? powerLimitFromMeter : 1000);
         const powerRatio = constrain((currentPower || 0) / alarmLimit, 0, 1);
         let waterAvgTemp = 0;
         let sum = 0;
@@ -321,13 +314,22 @@ class AudioManager {
             sum += (waterSystem.waterCells[i].temperature || 0);
         }
         waterAvgTemp = sum / waterSystem.waterCells.length;
-        const tempRatio = constrain(waterAvgTemp / 500, 0, 1);
+        const tempLimitFromMeter = (typeof ui !== 'undefined' && ui && ui.tempMeter && Number.isFinite(ui.tempMeter.max))
+            ? ui.tempMeter.max
+            : NaN;
+        const tempLimitFromPrestige = (typeof prestigeManager !== 'undefined' && prestigeManager && typeof prestigeManager.getCurrentBonuses === 'function')
+            ? prestigeManager.getCurrentBonuses().maxHeatCap
+            : NaN;
+        const alarmTempLimit = (Number.isFinite(tempLimitFromMeter) && tempLimitFromMeter > 0)
+            ? tempLimitFromMeter
+            : (Number.isFinite(tempLimitFromPrestige) && tempLimitFromPrestige > 0 ? tempLimitFromPrestige : 500);
+        const tempRatio = constrain(waterAvgTemp / alarmTempLimit, 0, 1);
         const alarmRatio = Math.max(powerRatio, tempRatio);
         this.alarmIntensity = constrain(map(alarmRatio, 0.8, 1.0, 0, 1), 0, 1);
 
         // --- General Ambience ---
         // Scale with power output: 10% at 0 power, 100% at max power
-        const ambientIntensity = constrain(map(currentPower || 0, 0, maxPowerRef || 1000, 0.1, 1.0), 0.1, 1.0);
+        const ambientIntensity = constrain(map(currentPower || 0, 0, alarmLimit, 0.1, 1.0), 0.1, 1.0);
         this.groups['ambience'].forEach(item => item.track.targetVolume = ambientIntensity);
     }
 
@@ -359,10 +361,7 @@ class AudioManager {
 
         if (!enabled || intensity <= 0) {
             if (s.isPlaying()) {
-                // Instant stop if disabled or 0 intensity (or fallback to quick fade if preferred, user said instant stop when pausing, but here it's logic update)
-                // If intensity is 0, we can stop or fade. Existing was fade.
-                // But user wants "all audio stop instantly when pausing". This logic runs when NOT paused.
-                // So fade here is fine for gameplay dynamic changes.
+                // Instant stop if disabled or 0 intensity, otherwise fade out
                 this.fadeOutSfx('alarm', 0.2);
             }
             return;

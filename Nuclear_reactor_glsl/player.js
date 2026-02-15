@@ -6,6 +6,7 @@ class Player {
         this.ownedGroups = [];
         this.groupAtomCounts = [];
         this.rodCount = 1;
+        this.rodUpgradeCount = 0;
         this.upgrades = {};
         this.settings = {};
 
@@ -19,6 +20,19 @@ class Player {
         this.waterFlowMin = this.waterFlowStart;
         this.waterFlowMax = this.waterFlowStart;
         this.upgrades.waterFlow = 0;
+
+        this.plutoniumUpgradeMax = 12;
+        this.plutoniumUpgradeCount = 0;
+        this.upgrades.plutonium = 0;
+
+        this.californiumUpgradeMax = 12;
+        this.californiumUpgradeCount = 0;
+        this.upgrades.californium = 0;
+
+        this.prestige = {
+            loopNumber: 1,
+            currentLevelData: null
+        };
         this.updateWaterFlowLimits();
     }
 
@@ -29,6 +43,10 @@ class Player {
             this.balance += finalAmount;
             this.incomePerSecond = finalAmount;
         }
+    }
+
+    applySetbackPenalty(multiplier = 0.75) {
+        this.balance = Math.max(0, this.balance * multiplier);
     }
 
     spend(amount) {
@@ -58,12 +76,18 @@ class Player {
             ownedGroups: this.ownedGroups,
             groupAtomCounts: this.groupAtomCounts,
             rodCount: this.rodCount,
+            rodUpgradeCount: this.rodUpgradeCount,
             upgrades: this.upgrades,
             waterFlowStart: this.waterFlowStart,
             waterFlowMinLimit: this.waterFlowMinLimit,
             waterFlowMaxLimit: this.waterFlowMaxLimit,
             waterFlowUpgradeMax: this.waterFlowUpgradeMax,
-            waterFlowUpgradeCount: this.waterFlowUpgradeCount
+            waterFlowUpgradeCount: this.waterFlowUpgradeCount,
+            plutoniumUpgradeMax: this.plutoniumUpgradeMax,
+            plutoniumUpgradeCount: this.plutoniumUpgradeCount,
+            californiumUpgradeMax: this.californiumUpgradeMax,
+            californiumUpgradeCount: this.californiumUpgradeCount,
+            prestige: this.prestige
         };
     }
 
@@ -74,6 +98,7 @@ class Player {
         this.ownedGroups = obj.ownedGroups || [];
         this.groupAtomCounts = obj.groupAtomCounts || [];
         this.rodCount = obj.rodCount || 1;
+        this.rodUpgradeCount = obj.rodUpgradeCount ?? 0;
         this.upgrades = obj.upgrades || {};
         this.waterFlowStart = obj.waterFlowStart ?? 0.15;
         this.waterFlowMinLimit = obj.waterFlowMinLimit ?? 0.01;
@@ -81,6 +106,16 @@ class Player {
         this.waterFlowUpgradeMax = obj.waterFlowUpgradeMax ?? 20;
         this.waterFlowUpgradeCount = obj.waterFlowUpgradeCount ?? (this.upgrades.waterFlow || 0);
         this.upgrades.waterFlow = this.waterFlowUpgradeCount;
+        this.plutoniumUpgradeMax = obj.plutoniumUpgradeMax ?? 12;
+        this.plutoniumUpgradeCount = obj.plutoniumUpgradeCount ?? (this.upgrades.plutonium || 0);
+        this.upgrades.plutonium = this.plutoniumUpgradeCount;
+        this.californiumUpgradeMax = obj.californiumUpgradeMax ?? 12;
+        this.californiumUpgradeCount = obj.californiumUpgradeCount ?? (this.upgrades.californium || 0);
+        this.upgrades.californium = this.californiumUpgradeCount;
+        this.prestige = obj.prestige || {
+            loopNumber: 1,
+            currentLevelData: null
+        };
         this.updateWaterFlowLimits();
     }
 }

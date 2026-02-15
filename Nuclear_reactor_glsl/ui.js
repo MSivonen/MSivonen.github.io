@@ -37,13 +37,17 @@ class UICanvas {
         this.canvas.style.position = 'absolute';
         this.canvas.style.left = '0';
         this.canvas.style.top = '0';
-        this.canvas.style.zIndex = '15'; 
         this.canvas.style.pointerEvents = 'none';
         this.canvas.style.display = 'none'; // Initially hidden
         this.canvas.id = "UI-Canvas";
 
+        const tutorialLayer = document.getElementById('layer-tutorial');
         const container = document.getElementById('canvas-container');
-        container.appendChild(this.canvas);
+        if (tutorialLayer) {
+            tutorialLayer.appendChild(this.canvas);
+        } else if (container) {
+            container.appendChild(this.canvas);
+        }
 
         this.ctx = this.canvas.getContext('2d');
         
@@ -58,12 +62,36 @@ class UICanvas {
         this.slotMenu = document.getElementById('ui-slot-menu');
         this.settingsMenu = document.getElementById('ui-settings-menu');
         this.uiLayer = document.getElementById('ui-layer');
+        this.devToolsPanel = document.getElementById('dev-tools-panel');
+
+        this.devInfiniteMoneyEnabled = false;
+        this.devInfiniteMoneyValue = 1e15;
+
+        this.devInputs = {
+            jumpLoop: document.getElementById('dev-jump-loop'),
+            setMoney: document.getElementById('dev-set-money'),
+            infiniteMoney: document.getElementById('dev-infinite-money'),
+            settingHeatingRate: document.getElementById('dev-setting-heating-rate'),
+            settingCollisionProb: document.getElementById('dev-setting-collision-prob'),
+            settingDecayProb: document.getElementById('dev-setting-decay-prob'),
+            settingMoneyExponent: document.getElementById('dev-setting-money-exp'),
+            settingWaterFlow: document.getElementById('dev-setting-water-flow'),
+            thresholdMoney: document.getElementById('dev-prestige-threshold-money'),
+            thresholdPower: document.getElementById('dev-prestige-threshold-power'),
+            bonusMaxHeat: document.getElementById('dev-prestige-max-heat'),
+            bonusMaxPower: document.getElementById('dev-prestige-max-power'),
+            applyLoopBtn: document.getElementById('dev-apply-loop'),
+            applyMoneyBtn: document.getElementById('dev-apply-money'),
+            applyValuesBtn: document.getElementById('dev-apply-values'),
+            printConfigBtn: document.getElementById('dev-print-config')
+        };
 
         this.initDOM();
 
         this.pauseMenuState = 'MAIN';
         this.pendingSaveSlot = null;
         this.activeDrag = null; // { type: 'plutonium'|'controlRod', index?: number }
+        this.boomOverlayButton = null;
         this.toastTimeouts = [];
     }
 
@@ -74,7 +102,6 @@ class UICanvas {
     }
 
     showToast(msg, duration = 2000) {
-        try {
             const container = document.getElementById('ui-toast-container');
             if (!container) return;
             const t = document.createElement('div');
@@ -89,7 +116,6 @@ class UICanvas {
                 setTimeout(() => { try { container.removeChild(t); } catch (e) {} }, 220);
             }, duration);
             this.toastTimeouts.push(timeout);
-        } catch (e) { console.error(e); }
     }
 
     initDOM() {
@@ -121,6 +147,19 @@ class UICanvas {
             <div id="stat-income" style="font-size: 14px; color: #777;">0€/s</div>
         `;
         this.sidebar.appendChild(statsDiv);
+ 
+        // Expose resetRodHandles on the instance so other code can call it
+        this.resetRodHandles = () => {
+                const slider = (typeof ui !== 'undefined' && ui) ? ui.controlSlider : null;
+                if (slider && Array.isArray(controlRods)) {
+                    slider.handleY = new Array(controlRods.length).fill(0);
+                    for (let i = 0; i < controlRods.length; i++) {
+                        slider.handleY[i] = clampControlRodHandleY(i, controlRods[i].initialY + controlRods[i].height);
+                    }
+                    slider.draggingIndex = -1;
+                    slider.ensureHandleLength();
+                }
+        };
 
         const controlsDiv = document.createElement('div');
         controlsDiv.style.background = '#444';
@@ -135,18 +174,25 @@ class UICanvas {
 
         const linkBtn = document.createElement('button');
         linkBtn.id = 'btn-link-rods';
-        linkBtn.innerText = `Link Rods: ${settings.linkRods ? 'ON' : 'OFF'}`;
         linkBtn.style.marginBottom = '15px';
+           this.linkRodsBtn = linkBtn;
+           this.updateLinkRodsButton = () => {
+              if (!this.linkRodsBtn) return;
+              this.linkRodsBtn.innerText = `Link Rods: ${settings.linkRods ? 'ON' : 'OFF'}`;
+              this.linkRodsBtn.style.background = settings.linkRods ? '#5cb85c' : '#d9534f';
+              this.linkRodsBtn.style.color = '#fff';
+           };
+           this.updateLinkRodsButton();
         linkBtn.onclick = () => {
              settings.linkRods = !settings.linkRods;
-             linkBtn.innerText = `Link Rods: ${settings.linkRods ? 'ON' : 'OFF'}`;
-             linkBtn.style.background = settings.linkRods ? '#5cb85c' : '#d9534f';
+               this.updateLinkRodsButton();
         };
            bindButtonSound(linkBtn);
         controlsDiv.appendChild(linkBtn);
         
         const waterDiv = document.createElement('div');
         waterDiv.innerHTML = `<label>Water Flow</label>`;
+        this.waterControlDiv = waterDiv;
         const waterSlider = document.createElement('input');
         waterSlider.type = 'range';
         waterSlider.min = '1';
@@ -184,6 +230,7 @@ class UICanvas {
         this.sidebar.appendChild(controlsDiv);
 
         const shopBtn = document.createElement('button');
+        this.shopBtn = shopBtn;
         shopBtn.innerText = "Open Shop";
         shopBtn.onclick = () => {
             this.toggleShop();
@@ -198,22 +245,29 @@ class UICanvas {
             this.pauseMenu.classList.remove('hidden');
             this.settingsMenu.classList.add('hidden');
             this.slotMenu.classList.add('hidden');
+
+            const saveName = playerState.getSaveName ? playerState.getSaveName() : 'Unnamed Save';
+            const pauseTitle = document.getElementById('pause-title');
+            if (pauseTitle) {
+                pauseTitle.innerText = `Paused\n${saveName}`;
+            }
+
             this.updateDOM();
         };
         bindButtonSound(sideSetBtn);
         this.sidebar.appendChild(sideSetBtn);
 
-        const devBtn = document.createElement('button');
-        devBtn.id = 'btn-devmode';
-        devBtn.innerText = settings.cheatMode ? "DEV MODE: ON" : "DEV MODE: OFF";
-        devBtn.style.marginTop = "auto"; // Push to bottom if sidebar uses flex column
-        devBtn.onclick = () => {
-            settings.cheatMode = !settings.cheatMode;
-            devBtn.innerText = settings.cheatMode ? "DEV MODE: ON" : "DEV MODE: OFF";
-            devBtn.style.color = settings.cheatMode ? '#5cb85c' : 'white';
+        const devToolsBtn = document.createElement('button');
+        devToolsBtn.id = 'btn-dev-tools';
+        devToolsBtn.innerText = 'Dev Tools';
+        devToolsBtn.style.marginTop = 'auto';
+        devToolsBtn.onclick = () => {
+            this.toggleDevToolsPanel();
         };
-        bindButtonSound(devBtn);
-        this.sidebar.appendChild(devBtn);
+        bindButtonSound(devToolsBtn);
+        this.sidebar.appendChild(devToolsBtn);
+
+        this.initDevTools();
 
         document.getElementById('ui-shop-close').onclick = () => this.toggleShop();
         bindButtonSound(document.getElementById('ui-shop-close'));
@@ -229,27 +283,7 @@ class UICanvas {
             };
         });
 
-        const amountControls = document.getElementById('shop-amount-controls');
-        const groupControls = document.createElement('div');
-        groupControls.id = 'shop-group-controls';
-        groupControls.style.marginBottom = '15px';
-        groupControls.style.display = 'flex';
-        groupControls.style.flexDirection = 'column';
-        groupControls.style.gap = '6px';
-
-        const groupLabel = document.createElement('span');
-        groupLabel.innerText = 'Uranium Group:';
-        groupControls.appendChild(groupLabel);
-
-        const groupRadios = document.createElement('div');
-        groupRadios.id = 'ui-atom-group-radios';
-        groupRadios.style.display = 'flex';
-        groupRadios.style.flexWrap = 'wrap';
-        groupRadios.style.gap = '8px';
-        groupControls.appendChild(groupRadios);
-
-        amountControls.insertAdjacentElement('afterend', groupControls);
-        this.atomGroupRadiosContainer = groupRadios;
+        this.atomGroupSelect = null;
 
         const onKeyChange = (e) => {
             if (e.key !== 'Shift' && e.key !== 'Control') return;
@@ -267,23 +301,17 @@ class UICanvas {
         const bind = (id, fn) => { const el = document.getElementById(id); el.onclick = fn; };
         
         bind('btn-resume', () => { paused = false; this.updateDOM(); });
-        bind('btn-save', () => {
-            const slot = (playerState && typeof playerState.getSelectedSlot === 'function') ? playerState.getSelectedSlot() : 0;
-            const ok = playerState.saveGame(slot);
-            this.showToast(ok ? `Saved to Slot ${slot + 1}` : `Save failed`);
-            audioManager.playSfx(ok ? 'click' : 'click_fail');
-        });
-        bind('btn-load', () => {
-            const slot = (playerState && typeof playerState.getSelectedSlot === 'function') ? playerState.getSelectedSlot() : 0;
-            const ok = playerState.loadGame(slot);
-            if (!ok) this.showToast('No save in selected slot');
-            paused = false;
-            this.updateDOM();
-            audioManager.playSfx(ok ? 'click' : 'click_fail');
-        });
         bind('btn-settings', () => { this.openSettingsMenu(); });
         bind('btn-quit', () => {
-            // Quit to title screen
+            // Save and quit to title screen
+            const slot = (playerState && typeof playerState.getSelectedSlot === 'function') ? playerState.getSelectedSlot() : 0;
+            const didSave = (playerState && typeof playerState.saveGame === 'function') ? playerState.saveGame(slot) : false;
+            if (!didSave) {
+                this.showToast(`Save failed in Slot ${slot + 1}`);
+                audioManager.playSfx('click_fail');
+                return;
+            }
+
             paused = true;
             const fadeOverlay = document.getElementById('fade-overlay');
             if (fadeOverlay) fadeOverlay.style.opacity = '1';
@@ -291,30 +319,36 @@ class UICanvas {
             // Wait for fade out
             setTimeout(() => {
                 audioManager.stopAllImmediate && audioManager.stopAllImmediate();
+                resetSimulation();
+                this.pauseMenu.classList.add('hidden');
+                this.slotMenu.classList.add('hidden');
+                this.settingsMenu.classList.add('hidden');
+                this.shopOpen = false;
+                this.shopOverlay.classList.add('hidden');
+                paused = false;
                 setUiVisibility(false);
                 gameState = 'TITLE';
+                if (window.titleRenderer && typeof window.titleRenderer.resetNeutrons === 'function') {
+                    window.titleRenderer.resetNeutrons();
+                }
                 
                 // Show loading/title overlay and slot selector
-                try {
                     const loadingScreen = document.getElementById('loading-screen');
-                    if (loadingScreen) loadingScreen.style.display = 'flex';
-                    if (this.showTitleSlotMenu) this.showTitleSlotMenu();
+                    loadingScreen.style.display = 'flex';
+                    this.showTitleSlotMenu();
                     
                     const loadingStart = document.getElementById('loading-start');
-                    if (loadingStart) {
                          loadingStart.style.bottom = '8%';
                          loadingStart.style.opacity = '1'; // Reset opacity
-                    }
                     
                     const startBtn = document.getElementById('loading-start-btn');
-                    if (startBtn) startBtn.disabled = false; // Re-enable
+                    startBtn.disabled = false; // Re-enable
 
                     // Fade back in to title
                     if (fadeOverlay) fadeOverlay.style.opacity = '0';
-                } catch (e) { console.error(e); }
             }, 1000);
         });
-        ['btn-resume','btn-save','btn-load','btn-settings'].forEach(id => bindButtonSound(document.getElementById(id)));
+                ['btn-resume','btn-settings','btn-quit'].forEach(id => bindButtonSound(document.getElementById(id)));
         
         bind('btn-slot-cancel', () => { 
             this.slotMenu.classList.add('hidden'); 
@@ -349,21 +383,23 @@ class UICanvas {
         const titleDelete = document.getElementById('title-delete-btn');
         const titleSaveBtn = document.getElementById('title-save-btn');
         const titleSaveInput = document.getElementById('title-save-name');
-        if (titleStart) {
             titleStart.addEventListener('click', () => {
                 const slot = (playerState && typeof playerState.getSelectedSlot === 'function') ? playerState.getSelectedSlot() : 0;
                 if (playerState.hasSave(slot)) {
                     const ok = playerState.loadGame(slot);
-                    if (!ok) this.showToast('Failed to load save. Starting new.');
+                    if (!ok) {
+                        this.showToast('Failed to load save. Starting new.');
+                        startFreshGame();
+                    }
                 } else {
                     // Start a fresh game in the selected slot
-                    resetSimulation();
-                    initializePlayerAtomGroups(player);
+                    startFreshGame();
+                }
+                if (window.tutorialManager && typeof window.tutorialManager.onRunStarted === 'function') {
+                    window.tutorialManager.onRunStarted();
                 }
                 // Transition logic is handled by loader.js
             });
-        }
-        if (titleDelete) {
             titleDelete.onclick = () => {
                 const slot = (playerState && typeof playerState.getSelectedSlot === 'function') ? playerState.getSelectedSlot() : 0;
                 if (playerState.hasSave(slot)) {
@@ -376,9 +412,7 @@ class UICanvas {
                     this.showToast('No save in selected slot');
                 }
             };
-        }
 
-        if (titleSaveBtn && titleSaveInput) {
             titleSaveBtn.onclick = () => {
                 const slot = (playerState && typeof playerState.getSelectedSlot === 'function') ? playerState.getSelectedSlot() : 0;
                 let name = titleSaveInput.value ? String(titleSaveInput.value).trim().substring(0,12) : null;
@@ -393,11 +427,11 @@ class UICanvas {
                     audioManager.playSfx('click_fail');
                 }
             };
-        }
     }
 
     isScramComplete() {
         for (let i = 0; i < controlRods.length; i++) {
+            if (typeof isControlRodActive === 'function' && !isControlRodActive(i)) continue;
             const rod = controlRods[i];
             const topY = -rod.height;
             if (Math.abs(rod.y - topY) > 1 || Math.abs(rod.targetY - topY) > 1) {
@@ -432,6 +466,14 @@ class UICanvas {
     }
     
     syncSettingsDOM() {
+        const tutorialCheck = document.getElementById('chk-tutorial-enabled');
+        if (tutorialCheck && window.tutorialManager) {
+            tutorialCheck.checked = !!window.tutorialManager.isEnabled;
+            tutorialCheck.onchange = (e) => {
+                window.tutorialManager.setEnabled(!!e.target.checked);
+            };
+        }
+
         const audioKeys = ['master', 'sfx', 'ambience', 'steam', 'water', 'alarms', 'explosions', 'scram'];
         audioKeys.forEach(key => {
             const slider = document.getElementById(`set-audio-${key}`);
@@ -517,9 +559,9 @@ class UICanvas {
         // Create 3 slots
         for(let i=0; i<3; i++) {
             const btn = document.createElement('button');
-            let slotInfo = (playerState && playerState.saveSlots && playerState.saveSlots[i]) ? playerState.saveSlots[i] : "Empty";
+            let slotInfo = (playerState && playerState.saveSlots && playerState.saveSlots[i]) ? playerState.saveSlots[i] : `Slot ${i + 1} - empty`;
             const info = playerState.getSaveInfo(i);
-            if (info && info.version && slotInfo !== 'Empty' && !slotInfo.includes(`v${info.version}`)) {
+            if (info && info.version && !slotInfo.includes(`v${info.version}`)) {
                 slotInfo = `${slotInfo} (v${info.version})`;
             }
             btn.innerText = `Slot ${i+1}: ${slotInfo}`;
@@ -547,17 +589,167 @@ class UICanvas {
         this.syncSettingsDOM(); 
     }
 
+    initDevTools() {
+        if (!this.devToolsPanel) return;
+
+        this.devToolsPanel.style.width = `${screenWidth}px`;
+        this.syncDevToolsUI();
+
+        const parseFinite = (value) => {
+            const parsed = parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+
+        if (this.devInputs.applyLoopBtn) {
+            this.devInputs.applyLoopBtn.onclick = () => {
+                const raw = parseInt(this.devInputs.jumpLoop ? this.devInputs.jumpLoop.value : '1', 10);
+                const loop = Number.isFinite(raw) ? Math.max(1, raw) : 1;
+
+                prestigeManager.loopNumber = loop;
+                prestigeManager.currentLevelData = prestigeManager.getLoopData(loop);
+                prestigeManager.applyCurrentLoopScaling();
+                if (player && typeof prestigeManager.saveToPlayer === 'function') {
+                    prestigeManager.saveToPlayer(player);
+                }
+
+                this.syncDevToolsUI();
+                this.showToast(`Jumped to loop ${loop}`);
+            };
+        }
+
+        if (this.devInputs.applyMoneyBtn) {
+            this.devInputs.applyMoneyBtn.onclick = () => {
+                const money = parseFinite(this.devInputs.setMoney ? this.devInputs.setMoney.value : '0');
+                if (money === null) {
+                    this.showToast('Invalid money value');
+                    return;
+                }
+                player.balance = Math.max(0, money);
+                this.syncDevToolsUI();
+                this.showToast('Money updated');
+            };
+        }
+
+        if (this.devInputs.infiniteMoney) {
+            this.devInputs.infiniteMoney.onchange = (e) => {
+                this.devInfiniteMoneyEnabled = !!e.target.checked;
+                if (this.devInfiniteMoneyEnabled) {
+                    player.balance = Math.max(player.balance, this.devInfiniteMoneyValue);
+                    settings.cheatMode = true;
+                }
+            };
+        }
+
+        if (this.devInputs.applyValuesBtn) {
+            this.devInputs.applyValuesBtn.onclick = () => {
+                const heatingRate = parseFinite(this.devInputs.settingHeatingRate ? this.devInputs.settingHeatingRate.value : '');
+                const collisionProbability = parseFinite(this.devInputs.settingCollisionProb ? this.devInputs.settingCollisionProb.value : '');
+                const decayProbability = parseFinite(this.devInputs.settingDecayProb ? this.devInputs.settingDecayProb.value : '');
+                const moneyExponent = parseFinite(this.devInputs.settingMoneyExponent ? this.devInputs.settingMoneyExponent.value : '');
+                const waterFlowSpeed = parseFinite(this.devInputs.settingWaterFlow ? this.devInputs.settingWaterFlow.value : '');
+
+                const levelData = prestigeManager.ensureCurrentLevelData();
+                levelData.thresholds = levelData.thresholds || {};
+                levelData.bonuses = levelData.bonuses || {};
+
+                if (heatingRate !== null) settings.heatingRate = Math.max(0, heatingRate);
+                if (collisionProbability !== null) settings.collisionProbability = Math.max(0, collisionProbability);
+                if (decayProbability !== null) settings.decayProbability = Math.max(0, decayProbability);
+                if (moneyExponent !== null) settings.moneyExponent = Math.max(0, moneyExponent);
+                if (waterFlowSpeed !== null) {
+                    const min = player.waterFlowMin;
+                    const max = player.waterFlowMax;
+                    settings.waterFlowSpeed = Math.max(min, Math.min(max, waterFlowSpeed));
+                }
+
+                if (heatingRate !== null) levelData.bonuses.heatingRate = Math.max(0, heatingRate);
+                if (collisionProbability !== null) levelData.bonuses.collisionProbability = Math.max(0, collisionProbability);
+                if (decayProbability !== null) levelData.bonuses.decayProbability = Math.max(0, decayProbability);
+
+                const thresholdMoney = parseFinite(this.devInputs.thresholdMoney ? this.devInputs.thresholdMoney.value : '');
+                const thresholdPower = parseFinite(this.devInputs.thresholdPower ? this.devInputs.thresholdPower.value : '');
+                const bonusMaxHeat = parseFinite(this.devInputs.bonusMaxHeat ? this.devInputs.bonusMaxHeat.value : '');
+                const bonusMaxPower = parseFinite(this.devInputs.bonusMaxPower ? this.devInputs.bonusMaxPower.value : '');
+
+                if (thresholdMoney !== null) levelData.thresholds.money = Math.max(0, Math.floor(thresholdMoney));
+                if (thresholdPower !== null) levelData.thresholds.power = Math.max(0, Math.floor(thresholdPower));
+                if (bonusMaxHeat !== null) levelData.bonuses.maxHeatCap = Math.max(1, Math.floor(bonusMaxHeat));
+                if (bonusMaxPower !== null) levelData.bonuses.maxPowerCap = Math.max(1, Math.floor(bonusMaxPower));
+
+                prestigeManager.currentLevelData = levelData;
+                prestigeManager.applyCurrentLoopScaling();
+                if (player && typeof prestigeManager.saveToPlayer === 'function') {
+                    prestigeManager.saveToPlayer(player);
+                }
+
+                this.syncDevToolsUI();
+                this.showToast('Dev values applied');
+            };
+        }
+
+        if (this.devInputs.printConfigBtn) {
+            this.devInputs.printConfigBtn.onclick = () => {
+                const payload = {
+                    loopNumber: prestigeManager.loopNumber,
+                    currentLevelData: prestigeManager.ensureCurrentLevelData(),
+                    settings: {
+                        heatingRate: settings.heatingRate,
+                        collisionProbability: settings.collisionProbability,
+                        decayProbability: settings.decayProbability,
+                        moneyExponent: settings.moneyExponent,
+                        waterFlowSpeed: settings.waterFlowSpeed,
+                        cheatMode: settings.cheatMode
+                    }
+                };
+
+                const toJsLiteral = (obj) => {
+                    const json = JSON.stringify(obj, null, 2);
+                    return json.replace(/"([a-zA-Z_$][\w$]*)":/g, '$1:');
+                };
+
+                console.log('DEV CONFIG (copy/paste):\nconst DEV_CONFIG = ' + toJsLiteral(payload) + ';');
+                this.showToast('Configuration printed to console');
+            };
+        }
+    }
+
+    toggleDevToolsPanel() {
+        if (!this.devToolsPanel) return;
+        this.devToolsPanel.classList.toggle('hidden');
+        this.devToolsPanel.style.width = `${screenWidth}px`;
+        this.syncDevToolsUI();
+    }
+
+    syncDevToolsUI() {
+        const levelData = prestigeManager.ensureCurrentLevelData() || {};
+        const thresholds = levelData.thresholds || {};
+        const bonuses = levelData.bonuses || {};
+
+        if (this.devInputs.jumpLoop) this.devInputs.jumpLoop.value = Math.max(1, prestigeManager.loopNumber || 1);
+        if (this.devInputs.setMoney) this.devInputs.setMoney.value = Number.isFinite(player.balance) ? player.balance : 0;
+        if (this.devInputs.infiniteMoney) this.devInputs.infiniteMoney.checked = this.devInfiniteMoneyEnabled;
+
+        if (this.devInputs.settingHeatingRate) this.devInputs.settingHeatingRate.value = Number.isFinite(bonuses.heatingRate) ? bonuses.heatingRate : settings.heatingRate;
+        if (this.devInputs.settingCollisionProb) this.devInputs.settingCollisionProb.value = Number.isFinite(bonuses.collisionProbability) ? bonuses.collisionProbability : settings.collisionProbability;
+        if (this.devInputs.settingDecayProb) this.devInputs.settingDecayProb.value = Number.isFinite(bonuses.decayProbability) ? bonuses.decayProbability : settings.decayProbability;
+        if (this.devInputs.settingMoneyExponent) this.devInputs.settingMoneyExponent.value = settings.moneyExponent;
+        if (this.devInputs.settingWaterFlow) this.devInputs.settingWaterFlow.value = settings.waterFlowSpeed;
+
+        if (this.devInputs.thresholdMoney) this.devInputs.thresholdMoney.value = Number.isFinite(thresholds.money) ? thresholds.money : 0;
+        if (this.devInputs.thresholdPower) this.devInputs.thresholdPower.value = Number.isFinite(thresholds.power) ? thresholds.power : 0;
+        if (this.devInputs.bonusMaxHeat) this.devInputs.bonusMaxHeat.value = Number.isFinite(bonuses.maxHeatCap) ? bonuses.maxHeatCap : 200;
+        if (this.devInputs.bonusMaxPower) this.devInputs.bonusMaxPower.value = Number.isFinite(bonuses.maxPowerCap) ? bonuses.maxPowerCap : 200;
+    }
+
     populateTitleSlotButtons() {
         const container = document.getElementById('title-slot-buttons');
-        if (!container || !playerState) return;
         container.innerHTML = '';
         for (let i = 0; i < 3; i++) {
             const btn = document.createElement('button');
-            const slotInfo = (playerState && playerState.saveSlots && playerState.saveSlots[i]) ? playerState.saveSlots[i] : 'Empty';
             const info = playerState.getSaveInfo(i);
             btn.className = 'title-slot-button';
             // Primary label: save name if present, otherwise slot label
-            const label = (info && info.name) ? info.name : `Slot ${i+1}`;
+            const label = (info && info.name) ? info.name : `Slot ${i+1} - empty`;
             btn.innerText = label;
             // Tooltip: timestamp and version when available
             if (info && info.timestamp) {
@@ -593,23 +785,21 @@ class UICanvas {
         this.populateTitleSlotButtons();
         // Show the whole loading/title overlay so Start and slots are visible
         const loadingScreen = document.getElementById('loading-screen');
-        if (loadingScreen) loadingScreen.style.display = 'flex';
-        if (loadingStartBtn) loadingStartBtn.style.display = 'inline-block';
-        if (slotContainer) slotContainer.style.display = 'block';
+        loadingScreen.style.display = 'flex';
+        loadingStartBtn.style.display = 'inline-block';
+        slotContainer.style.display = 'block';
         // Also show the save name input and save/delete buttons which are hidden by default
         const saveInput = document.getElementById('title-save-name');
         const saveBtn = document.getElementById('title-save-btn');
         const deleteBtn = document.getElementById('title-delete-btn');
-        if (saveInput) saveInput.style.display = 'inline-block';
-        if (saveBtn) saveBtn.style.display = 'inline-block';
-        if (deleteBtn) deleteBtn.style.display = 'inline-block';
+        saveInput.style.display = 'inline-block';
+        saveBtn.style.display = 'inline-block';
+        deleteBtn.style.display = 'inline-block';
         // Fade in the title buttons when they are shown later than the initial loader fade.
-        if (loadingStart) {
             if (!loadingStart.style.transition) loadingStart.style.transition = 'opacity 1s ease-in-out';
             loadingStart.style.opacity = '0';
             loadingStart.getBoundingClientRect();
             setTimeout(() => { loadingStart.style.opacity = '1'; }, 50);
-        }
         // Prefill save name input with selected slot's name
         const nameInput = document.getElementById('title-save-name');
         try {
@@ -643,9 +833,11 @@ class UICanvas {
         }
 
         this.scramActive = true;
-        if (btn) {
             btn.classList.add('scram-active');
             btn.innerText = '!!SCRAM!!';
+
+        if (window.tutorialManager && typeof window.tutorialManager.onScramPressed === 'function') {
+            window.tutorialManager.onScramPressed();
         }
 
         try {
@@ -681,6 +873,7 @@ class UICanvas {
             const item = shop.items[key];
             const itemDiv = document.createElement('div');
             itemDiv.className = 'shop-item';
+            itemDiv.id = `shop-item-${key}`;
             
             const title = document.createElement('h3');
             title.id = `shop-title-${key}`;
@@ -709,7 +902,30 @@ class UICanvas {
                     audioManager.playSfx('click');
                 }
             });
-            itemDiv.appendChild(btn);
+            if (key === 'atom') {
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.gap = '8px';
+                row.style.alignItems = 'center';
+
+                const groupSelect = document.createElement('select');
+                groupSelect.id = 'ui-atom-group-select';
+                groupSelect.style.flex = '1 1 auto';
+                groupSelect.style.minWidth = '96px';
+                groupSelect.style.height = '34px';
+                groupSelect.onchange = (e) => {
+                    shop.setTargetAtomGroup(e.target.value);
+                    this.updateShopButtons();
+                };
+                this.atomGroupSelect = groupSelect;
+
+                btn.style.flex = '1 1 auto';
+                row.appendChild(groupSelect);
+                row.appendChild(btn);
+                itemDiv.appendChild(row);
+            } else {
+                itemDiv.appendChild(btn);
+            }
 
             this.shopItemsContainer.appendChild(itemDiv);
         });
@@ -719,40 +935,24 @@ class UICanvas {
     }
 
     renderAtomGroupRadios() {
-        if (!this.atomGroupRadiosContainer) return;
+        if (!this.atomGroupSelect) return;
 
-        const maxGroups = getAtomGroupCount();
         const owned = new Set(player.ownedGroups);
         const ownedIndices = Array.from(owned).sort((a,b) => a - b);
 
-        this.atomGroupRadiosContainer.innerHTML = '';
-
+        this.atomGroupSelect.innerHTML = '';
         for (let idx of ownedIndices) {
-            const label = document.createElement('label');
-            label.style.display = 'flex';
-            label.style.alignItems = 'center';
-            label.style.gap = '4px';
-
-            const input = document.createElement('input');
-            input.type = 'radio';
-            input.name = 'atomGroupRadio';
-            input.value = String(idx);
-            input.onchange = (e) => {
-                shop.setTargetAtomGroup(e.target.value);
-                this.updateShopButtons();
-            };
-
-            const text = document.createElement('span');
-            text.innerText = `Group ${idx + 1}`;
-
-            label.appendChild(input);
-            label.appendChild(text);
-            this.atomGroupRadiosContainer.appendChild(label);
+            const option = document.createElement('option');
+            option.value = String(idx);
+            option.text = `G${idx + 1}`;
+            this.atomGroupSelect.appendChild(option);
         }
 
-        // Set the initial selected
-        const selected = this.atomGroupRadiosContainer.querySelector(`input[value="${String(shop.targetAtomGroupIndex)}"]`);
-        if (selected) selected.checked = true;
+        const hasTarget = ownedIndices.includes(Number(shop.targetAtomGroupIndex));
+        if (!hasTarget && ownedIndices.length > 0) {
+            shop.setTargetAtomGroup(ownedIndices[0]);
+        }
+        this.atomGroupSelect.value = String(shop.targetAtomGroupIndex);
     }
 
     updateShopButtons() {
@@ -763,24 +963,35 @@ class UICanvas {
         // Update atom group radios if owned groups changed
         const owned = new Set(player.ownedGroups);
         const ownedIndices = Array.from(owned).sort((a,b) => a - b);
-        if (this.atomGroupRadiosContainer && this.atomGroupRadiosContainer.children.length !== ownedIndices.length) {
+        if (this.atomGroupSelect && this.atomGroupSelect.options.length !== ownedIndices.length) {
             this.renderAtomGroupRadios();
-        } else if (this.atomGroupRadiosContainer) {
+        } else if (this.atomGroupSelect) {
             // Ensure current target is one of the owned indices (compare as numbers)
             const targetNum = Number(shop.targetAtomGroupIndex);
             if (ownedIndices.length > 0 && !ownedIndices.includes(targetNum)) {
                 const firstOwned = ownedIndices[0];
                 shop.setTargetAtomGroup(firstOwned);
             }
-            // Update selection
-            const selected = this.atomGroupRadiosContainer.querySelector(`input[value="${String(shop.targetAtomGroupIndex)}"]`);
-            if (selected) selected.checked = true;
+            this.atomGroupSelect.value = String(shop.targetAtomGroupIndex);
         }
 
         Object.keys(shop.items).forEach(key => {
+            const itemDiv = document.getElementById(`shop-item-${key}`);
             const btn = document.getElementById(`shop-btn-${key}`);
             const title = document.getElementById(`shop-title-${key}`);
             const desc = document.getElementById(`shop-desc-${key}`);
+
+            const unlocked = shop.isItemUnlocked ? shop.isItemUnlocked(key) : true;
+            const rodUpgradeVisible = key !== 'controlRodUpgrade' || controlRodPurchaseCount > 1;
+            const showItem = unlocked && rodUpgradeVisible;
+            if (itemDiv) {
+                itemDiv.style.display = showItem ? '' : 'none';
+            }
+
+            if (!showItem) {
+                return;
+            }
+
             if (btn) {
                 // getPurchaseInfo uses internal shop.buyAmount
                 const info = shop.getPurchaseInfo(key); 
@@ -792,9 +1003,21 @@ class UICanvas {
                     const current = player.waterFlowUpgradeCount;
                     const max = player.waterFlowUpgradeMax;
                     isMaxed = current >= max && max > 0;
+                } else if (key === 'plutonium') {
+                    const current = player.plutoniumUpgradeCount;
+                    const max = player.plutoniumUpgradeMax;
+                    isMaxed = current >= max && max > 0;
+                } else if (key === 'californium') {
+                    const current = player.californiumUpgradeCount;
+                    const max = player.californiumUpgradeMax;
+                    isMaxed = current >= max && max > 0;
                 } else if (key === 'controlRod') {
                     const current = controlRodPurchaseCount;
                     const max = getMaxControlRodPurchases();
+                    isMaxed = current >= max && max > 0;
+                } else if (key === 'controlRodUpgrade') {
+                    const current = controlRodUpgradePurchaseCount;
+                    const max = getMaxControlRodUpgradePurchases();
                     isMaxed = current >= max && max > 0;
                 } else if (key === 'group') {
                     const current = player.ownedGroups.length;
@@ -843,10 +1066,22 @@ class UICanvas {
                     const current = player.waterFlowUpgradeCount;
                     const max = player.waterFlowUpgradeMax;
                     title.innerText = `Water flow ${current}/${max}`;
+                } else if (key === 'plutonium') {
+                    const current = player.plutoniumUpgradeCount;
+                    const max = player.plutoniumUpgradeMax;
+                    title.innerText = `Plutonium ${current}/${max}`;
+                } else if (key === 'californium') {
+                    const current = player.californiumUpgradeCount;
+                    const max = player.californiumUpgradeMax;
+                    title.innerText = `Californium ${current}/${max}`;
                 } else if (key === 'controlRod') {
                     const current = controlRodPurchaseCount;
                     const max = getMaxControlRodPurchases();
                     title.innerText = `Control Rod ${current}/${max}`;
+                } else if (key === 'controlRodUpgrade') {
+                    const current = controlRodUpgradePurchaseCount;
+                    const max = getMaxControlRodUpgradePurchases();
+                    title.innerText = `Control Rod Upgrade ${current}/${max}`;
                 } else if (key === 'group') {
                     const current = player.ownedGroups.length;
                     const max = getAtomGroupCount();
@@ -870,6 +1105,14 @@ class UICanvas {
     }
 
     toggleShop() {
+        const shopUnlocked = !(window.tutorialManager && typeof window.tutorialManager.isShopUnlocked === 'function')
+            || window.tutorialManager.isShopUnlocked();
+        if (!shopUnlocked) {
+            this.shopOpen = false;
+            this.shopOverlay.classList.add('hidden');
+            return;
+        }
+
         this.shopOpen = !this.shopOpen;
         if (this.shopOpen) {
             this.shopOverlay.classList.remove('hidden');
@@ -880,6 +1123,8 @@ class UICanvas {
     }
 
     updateDOM() {
+        const tutorialActive = !!(window.tutorialManager && window.tutorialManager.isActive && window.tutorialManager.isActive());
+
         if (this.scramActive && this.isScramComplete()) {
             this.scramActive = false;
             const scramBtn = document.getElementById('btn-scram');
@@ -889,11 +1134,18 @@ class UICanvas {
             }
             audioManager.fadeOutSfx('scram', 1);
         }
+
+        if (tutorialActive) {
+            this.pauseMenu.classList.add('hidden');
+            this.slotMenu.classList.add('hidden');
+            this.settingsMenu.classList.add('hidden');
+        }
+
         if (!paused) {
             this.pauseMenu.classList.add('hidden');
             this.slotMenu.classList.add('hidden');
             this.settingsMenu.classList.add('hidden');
-        } else {
+        } else if (!tutorialActive) {
             const pHidden = this.pauseMenu.classList.contains('hidden');
             const sHidden = this.slotMenu.classList.contains('hidden');
             const settHidden = this.settingsMenu.classList.contains('hidden');
@@ -907,6 +1159,48 @@ class UICanvas {
         const iStat = document.getElementById('stat-income');
         mStat.innerText = formatLarge(player.getBalance(), CURRENCY_UNIT, 2);
         iStat.innerText = `${formatLarge(lastMoneyPerSecond, CURRENCY_UNIT, 2)}/s`;
+
+        const showMoneyStats = !window.tutorialManager
+            || !window.tutorialManager.hasCompleted
+            || window.tutorialManager.hasCompleted('first_power_output')
+            || (Number.isFinite(energyOutput) && energyOutput >= 10);
+        mStat.style.display = showMoneyStats ? '' : 'none';
+        iStat.style.display = showMoneyStats ? '' : 'none';
+
+        const linkRodsUnlocked = !window.tutorialManager
+            || !window.tutorialManager.isItemUnlocked
+            || window.tutorialManager.isItemUnlocked('controlRod');
+        const hasMultipleRods = Number.isFinite(controlRodPurchaseCount) && controlRodPurchaseCount > 1;
+        const scramCompleted = !window.tutorialManager
+            || !window.tutorialManager.hasCompleted
+            || window.tutorialManager.hasCompleted('scram_pressed_once');
+        const showLinkRods = linkRodsUnlocked && scramCompleted && hasMultipleRods;
+        if (this.linkRodsBtn) {
+            this.linkRodsBtn.style.display = showLinkRods ? '' : 'none';
+            if (!showLinkRods && settings.linkRods) {
+                settings.linkRods = false;
+                this.updateLinkRodsButton();
+            }
+        }
+
+        const shopUnlocked = !(window.tutorialManager && typeof window.tutorialManager.isShopUnlocked === 'function')
+            || window.tutorialManager.isShopUnlocked();
+        if (this.shopBtn) {
+            this.shopBtn.style.display = shopUnlocked ? '' : 'none';
+        }
+        if (!shopUnlocked && this.shopOpen) {
+            this.shopOpen = false;
+            this.shopOverlay.classList.add('hidden');
+        }
+
+        const waterUnlocked = shop && typeof shop.isItemUnlocked === 'function' ? shop.isItemUnlocked('waterFlow') : true;
+        if (this.waterControlDiv) {
+            this.waterControlDiv.style.display = waterUnlocked ? '' : 'none';
+        }
+
+        if (this.devInfiniteMoneyEnabled) {
+            player.balance = Math.max(player.balance, this.devInfiniteMoneyValue);
+        }
         
         const min = player.waterFlowMin;
         const max = player.waterFlowMax;
@@ -922,6 +1216,10 @@ class UICanvas {
         
         if (this.shopOpen) {
             this.updateShopButtons();
+        }
+
+        if (this.devToolsPanel && !this.devToolsPanel.classList.contains('hidden')) {
+            this.devToolsPanel.style.width = `${screenWidth}px`;
         }
     }
 
@@ -939,31 +1237,64 @@ class UICanvas {
         // Control rods moved to GL renderer
         // controlRods.forEach(r => r.draw(this.ctx, this.simXOffset));
 
-        ui.powerMeter.draw(this.ctx, this.simXOffset);
-        ui.tempMeter.draw(this.ctx, this.simXOffset);
+        const showPowerMeter = !window.tutorialManager
+            || !window.tutorialManager.hasCompleted
+            || window.tutorialManager.hasCompleted('first_power_output')
+            || (Number.isFinite(energyOutput) && energyOutput >= 10);
+        const showTempMeter = !window.tutorialManager
+            || !window.tutorialManager.hasCompleted
+            || window.tutorialManager.hasCompleted('heat_warning')
+            || (Number.isFinite(window.avgTemp) && window.avgTemp >= 55);
+
+        if (showPowerMeter) {
+            ui.powerMeter.draw(this.ctx, this.simXOffset);
+        }
+        if (showTempMeter) {
+            ui.tempMeter.draw(this.ctx, this.simXOffset);
+        }
 
         // Slider handles moved to GL renderer, but logic still needs to run
         ui.controlSlider.draw(this.ctx, this.simXOffset, true); // Added skipDraw flag
         
         drawFPS(this.ctx, this.simXOffset);
         gameOver(this.ctx, this.simXOffset);
+        if (window.tutorialManager && typeof window.tutorialManager.draw === 'function') {
+            window.tutorialManager.draw(this.ctx, this.simXOffset);
+        }
     }
 
     handleMouseClick(x, y) {
+        if (window.tutorialManager && window.tutorialManager.isActive && window.tutorialManager.isActive()) {
+            if (window.tutorialManager.handleMouseClick(x, y)) return;
+        }
+
+        if (boomInputLocked) {
+            this.handleBoomOverlayClick(x, y);
+            return;
+        }
+
         const m = scaleMouse(x, y);
         // Clicks outside simulation area are ignored
         if (m.x < 0) return;
 
+        const scramCompleted = !!(window.tutorialManager
+            && typeof window.tutorialManager.hasCompleted === 'function'
+            && window.tutorialManager.hasCompleted('scram_pressed_once'));
+
         // Check control rod handles first (highest priority)
         const HANDLE_RADIUS = 10 * globalScale;
-        if (controlRods && ui.controlSlider) {
+        if (scramCompleted && controlRods && ui.controlSlider) {
             for (let i = 0; i < controlRods.length; i++) {
+                if (typeof isControlRodActive === 'function' && !isControlRodActive(i)) continue;
                 const rod = controlRods[i];
                 const handleX = rod.x + rod.width / 2;
                 const handleY = (typeof ui.controlSlider.handleY[i] === 'number') ? ui.controlSlider.handleY[i] : (rod.y + rod.height);
                 const dx = m.x - handleX;
                 const dy = m.y - handleY;
                 if (Math.sqrt(dx * dx + dy * dy) <= HANDLE_RADIUS + 4 * globalScale) {
+                    if (window.tutorialManager && typeof window.tutorialManager.onControlRodDragged === 'function') {
+                        window.tutorialManager.onControlRodDragged();
+                    }
                     this.activeDrag = { type: 'controlRod', index: i };
                     ui.controlSlider.draggingIndex = i;
                     return;
@@ -972,7 +1303,9 @@ class UICanvas {
         }
 
         // Check plutonium
-        if (typeof plutonium !== 'undefined' && plutonium) {
+        const plutoniumUnlocked = !(window.tutorialManager && typeof window.tutorialManager.isItemUnlocked === 'function')
+            || window.tutorialManager.isItemUnlocked('plutonium');
+        if (plutoniumUnlocked && typeof plutonium !== 'undefined' && plutonium) {
             const dx = m.x - plutonium.x;
             const dy = m.y - plutonium.y;
             if (Math.sqrt(dx * dx + dy * dy) <= plutonium.radius) {
@@ -985,7 +1318,9 @@ class UICanvas {
         }
 
         // Check californium as well so clicks capture it before draw methods
-        if (typeof californium !== 'undefined' && californium) {
+        const californiumUnlocked = !(window.tutorialManager && typeof window.tutorialManager.isItemUnlocked === 'function')
+            || window.tutorialManager.isItemUnlocked('californium');
+        if (californiumUnlocked && typeof californium !== 'undefined' && californium) {
             const dx2 = m.x - californium.x;
             const dy2 = m.y - californium.y;
             if (Math.sqrt(dx2 * dx2 + dy2 * dy2) <= californium.radius) {
@@ -999,6 +1334,7 @@ class UICanvas {
     }
 
     handleMouseDrag(x, y) {
+        if (boomInputLocked) return;
         const m = scaleMouse(x, y);
         if (!this.activeDrag) return;
 
@@ -1020,6 +1356,7 @@ class UICanvas {
     }
 
     handleMouseRelease() {
+        if (boomInputLocked) return;
         if (this.activeDrag && this.activeDrag.type === 'controlRod') {
             ui.controlSlider.draggingIndex = -1;
         }
@@ -1028,9 +1365,24 @@ class UICanvas {
         }
         this.activeDrag = null;
     }
+
+    handleBoomOverlayClick(x, y) {
+        if (!boomInputLocked || boomOutcome !== 'SETBACK') return;
+        const btn = this.boomOverlayButton;
+        if (!btn || !btn.visible) return;
+
+        if (x >= btn.x && x <= (btn.x + btn.w) && y >= btn.y && y <= (btn.y + btn.h)) {
+            rollbackSetback();
+        }
+    }
 }
 
 function drawBorders(ctx, offsetX = 0) {
+    const uiLayer = document.getElementById('ui-layer');
+    const sidebar = document.getElementById('ui-sidebar');
+    const sidebarVisible = !!(uiLayer && uiLayer.style.display !== 'none' && sidebar);
+    if (sidebarVisible) return;
+
     ctx.save();
     ctx.fillStyle = 'black';
     // Fill anything to the left of simulation (already covered by sidebar usually, but keep for safety)
@@ -1057,16 +1409,27 @@ function drawFPS(ctx, offsetX) {
 
 function gameOver(ctx, offsetX = 0) {
     if (!boom) return;
-    if (mouseIsPressed && mouseButton === RIGHT) {
-        resetSimulation();
-        return;
-    }
-
-    settings.collisionProbability = 0;
     const boomText = 'Boom!!!';
 
     const centerX = offsetX + screenSimWidth / 2;
     const centerY = screenHeight / 2;
+    const elapsed = boomStartTime > 0 ? Math.max(0, renderTime - boomStartTime) : 0;
+    const fadeInAlpha = Math.max(0, Math.min(1, (elapsed - 2.0) / 0.5));
+    const buttonWidth = 290 * globalScale;
+    const buttonHeight = 58 * globalScale;
+    const buttonX = centerX - buttonWidth / 2;
+    const buttonY = centerY + 130 * globalScale;
+    const hoverButton = fadeInAlpha > 0 && mouseX >= buttonX && mouseX <= (buttonX + buttonWidth) && mouseY >= buttonY && mouseY <= (buttonY + buttonHeight);
+
+    if (ui && ui.canvas) {
+        ui.canvas.boomOverlayButton = {
+            x: buttonX,
+            y: buttonY,
+            w: buttonWidth,
+            h: buttonHeight,
+            visible: boomOutcome === 'SETBACK' && fadeInAlpha > 0
+        };
+    }
 
     ctx.save();
     ctx.textAlign = 'center';
@@ -1095,6 +1458,41 @@ function gameOver(ctx, offsetX = 0) {
     ctx.fillText(boomText, centerX + (Math.random() - 0.5) * 4 * globalScale, centerY + (Math.random() - 0.5) * 4 * globalScale);
     ctx.font = `${130 * globalScale}px boom2, sans-serif`;
     ctx.fillText(boomText, centerX + (Math.random() - 0.5) * 4 * globalScale, centerY + (Math.random() - 0.5) * 4 * globalScale);
+
+    if (boomOutcome === 'SETBACK' && fadeInAlpha > 0) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${fadeInAlpha})`;
+        ctx.font = `${24 * globalScale}px UIFont1, sans-serif`;
+        ctx.fillText('Reactor Melted - Progress Lost', centerX, centerY + 85 * globalScale);
+
+        if (typeof boomShowFailedPrestigeLore !== 'undefined' && boomShowFailedPrestigeLore) {
+            ctx.fillStyle = `rgba(200, 245, 200, ${fadeInAlpha})`;
+            ctx.font = `${16 * globalScale}px UIFont1, sans-serif`;
+            ctx.fillText('You have failed the Atom\'s calling, the reactor is melting.', centerX, centerY - 220 * globalScale);
+            ctx.fillText('You grab the device you found earlier and run to the car. You must escape.', centerX, centerY - 200 * globalScale);
+            ctx.fillText('The clock of the car flickers and it snaps a bit backwards.', centerX, centerY - 180 * globalScale);
+        }
+
+        const lossText = `Setback loss: -${formatLarge(boomSetbackLoss || 0, CURRENCY_UNIT, 2)}`;
+        ctx.fillStyle = `rgba(255, 180, 180, ${fadeInAlpha})`;
+        ctx.font = `${18 * globalScale}px UIFont1, sans-serif`;
+        ctx.fillText(lossText, centerX, centerY + 112 * globalScale);
+
+        ctx.fillStyle = hoverButton ? `rgba(45, 45, 45, ${fadeInAlpha})` : `rgba(22, 22, 22, ${fadeInAlpha})`;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${fadeInAlpha})`;
+        ctx.lineWidth = 2 * globalScale;
+        ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+        ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+
+        ctx.fillStyle = `rgba(255, 255, 255, ${fadeInAlpha})`;
+        ctx.font = `${24 * globalScale}px UIFont1, sans-serif`;
+        ctx.fillText('88mph backwards', centerX, buttonY + buttonHeight / 2);
+
+        if (hoverButton) {
+            ctx.fillStyle = `rgba(255, 232, 148, ${fadeInAlpha})`;
+            ctx.font = `${18 * globalScale}px UIFont1, sans-serif`;
+            ctx.fillText('Roll back time and try again', centerX, buttonY + buttonHeight + 28 * globalScale);
+        }
+    }
 
     ctx.restore();
 }

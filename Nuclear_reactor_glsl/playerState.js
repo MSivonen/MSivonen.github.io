@@ -1,6 +1,6 @@
 class PlayerState {
     constructor() {
-        this.saveSlots = ['Empty', 'Empty', 'Empty'];
+        this.saveSlots = [0, 1, 2].map(i => this.getEmptySlotLabel(i));
         this.selectedSlot = 0; // active slot index used for autosave / quick save/load
         this.loadSlots();
         // Load selected slot from storage if present
@@ -16,7 +16,16 @@ class PlayerState {
         const GAME_VERSION = '0.12';
 
         // optional name parameter may be passed as second arg
-        const name = (arguments.length > 1 && typeof arguments[1] === 'string') ? String(arguments[1]).substring(0, 12) : null;
+        const rawName = (arguments.length > 1 && typeof arguments[1] === 'string') ? String(arguments[1]).trim().substring(0, 12) : '';
+        const existing = this.getSaveInfo(slotIndex);
+        const preservedName = (existing && existing.name) ? String(existing.name).trim().substring(0, 12) : '';
+        const name = rawName || preservedName || `Slot ${slotIndex + 1}`;
+
+            prestigeManager.saveToPlayer(player);
+
+        const tutorialData = (window.tutorialManager && typeof window.tutorialManager.getSaveData === 'function')
+            ? window.tutorialManager.getSaveData()
+            : { tutorialEnabled: true, tutorialCompleted: {} };
 
         const saveData = {
             timestamp: new Date().toISOString(),
@@ -25,13 +34,18 @@ class PlayerState {
             shop: shop.serialize(),
             settings: { ...settings },
             uiSettings: ui.canvas.uiSettings,
+            tutorialEnabled: tutorialData.tutorialEnabled,
+            tutorialCompleted: tutorialData.tutorialCompleted,
+            tutorialShopUnlocked: tutorialData.tutorialShopUnlocked,
+            tutorialItemUnlocks: tutorialData.tutorialItemUnlocks,
+            tutorialFirstPowerAt: tutorialData.tutorialFirstPowerAt,
             version: GAME_VERSION
         };
 
         try {
+            this.setSelectedSlot(slotIndex);
             localStorage.setItem(`nuclearReactor_save_${slotIndex}`, JSON.stringify(saveData));
-            const namePart = name ? `${name} — ` : '';
-            this.saveSlots[slotIndex] = `${namePart}${new Date().toLocaleString()} (v${GAME_VERSION})`;
+            this.saveSlots[slotIndex] = `${name} — ${new Date().toLocaleString()} (v${GAME_VERSION})`;
             this.saveSlotsToStorage();
             return true;
         } catch (e) {
@@ -49,13 +63,30 @@ class PlayerState {
 
             const saveData = JSON.parse(saveDataStr);
 
-            player.deserialize(saveData.player);
-            shop.deserialize(saveData.shop);
-            Object.assign(settings, saveData.settings);
-            ui.canvas.uiSettings = saveData.uiSettings;
-
+            this.setSelectedSlot(slotIndex);
             resetSimulation();
+
+            player.deserialize(saveData.player);
+            if (typeof plutonium !== 'undefined' && plutonium && typeof plutonium.syncFromPlayer === 'function') {
+                plutonium.syncFromPlayer();
+            }
+            if (prestigeManager && typeof prestigeManager.loadFromPlayer === 'function') {
+                prestigeManager.loadFromPlayer(player);
+            }
+            shop.deserialize(saveData.shop);
+            Object.assign(settings, defaultSettings, saveData.settings || {});
+            if (!Number.isFinite(settings.collisionProbability) || settings.collisionProbability <= 0) {
+                settings.collisionProbability = defaultSettings.collisionProbability;
+            }
+            ui.canvas.uiSettings = saveData.uiSettings;
+            if (window.tutorialManager && typeof window.tutorialManager.loadFromSave === 'function') {
+                window.tutorialManager.loadFromSave(saveData);
+            }
+
             initializePlayerAtomGroups(player);
+            initControlRodUpgrades();
+            settings.waterFlowSpeed = Math.max(player.waterFlowMin, Math.min(player.waterFlowMax, settings.waterFlowSpeed));
+            settings.targetNeutronSize = settings.neutronSize;
 
             return true;
         } catch (e) {
@@ -77,12 +108,18 @@ class PlayerState {
             return {
                 timestamp: saveData.timestamp,
                 version: saveData.version,
-                name: saveData.name || null,
+                name: (saveData.name && String(saveData.name).trim()) ? saveData.name : `Slot ${slotIndex + 1}`,
                 hasData: true
             };
         } catch (e) {
             return null;
         }
+    }
+
+    getSaveName() {
+        const slotIndex = this.getSelectedSlot();
+        const saveInfo = this.getSaveInfo(slotIndex);
+        return saveInfo && saveInfo.name ? saveInfo.name : `Slot ${slotIndex + 1}`;
     }
 
     saveSlotsToStorage() {
@@ -106,7 +143,11 @@ class PlayerState {
         try {
             const slotsStr = localStorage.getItem('nuclearReactor_saveSlots');
             if (slotsStr) {
-                this.saveSlots = JSON.parse(slotsStr);
+                const parsed = JSON.parse(slotsStr);
+                for (let i = 0; i < 3; i++) {
+                    const val = Array.isArray(parsed) ? parsed[i] : null;
+                    this.saveSlots[i] = (typeof val === 'string' && val.trim() && val !== 'Empty') ? val : this.getEmptySlotLabel(i);
+                }
             }
         } catch (e) {
             console.error('Failed to load slot info:', e);
@@ -117,13 +158,18 @@ class PlayerState {
         if (slotIndex < 0 || slotIndex > 2) return false;
 
         try {
+            this.setSelectedSlot(slotIndex);
             localStorage.removeItem(`nuclearReactor_save_${slotIndex}`);
-            this.saveSlots[slotIndex] = 'Empty';
+            this.saveSlots[slotIndex] = this.getEmptySlotLabel(slotIndex);
             this.saveSlotsToStorage();
             return true;
         } catch (e) {
             console.error('Failed to delete save:', e);
             return false;
         }
+    }
+
+    getEmptySlotLabel(slotIndex) {
+        return `Slot ${slotIndex + 1} - empty`;
     }
 }

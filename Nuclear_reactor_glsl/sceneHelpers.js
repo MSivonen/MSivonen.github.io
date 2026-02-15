@@ -114,6 +114,7 @@ function initShadersAndGL() {
         gl,
         uraniumAtomsCountX * uraniumAtomsCountY,
         glShit.shaderCodes.steamVertCode,
+        glShit.shaderCodes.steamStampFragCode,
         glShit.shaderCodes.steamFragCode
     );
     glShit.useGpuSteam = true;
@@ -130,6 +131,7 @@ function initSimulationObjects() {
     controlRodSlotXs = [];
     controlRods = new Array(controlRodCount).fill(null);
     controlRodPurchaseCount = 0;
+    controlRodUpgradePurchaseCount = 0;
     controlRodUpgradeLevels = [];
 
     for (let y = 0; y < uraniumAtomsCountY; y++) {
@@ -184,6 +186,10 @@ function initUiObjects() {
     ui.controlSlider = new ControlRodsSlider();
     ui.canvas = new UICanvas();
 
+    if (prestigeManager && typeof prestigeManager.applyCurrentLoopScaling === 'function') {
+        prestigeManager.applyCurrentLoopScaling();
+    }
+
     uiOverlay.init(gl);
 }
 
@@ -192,18 +198,32 @@ function initUiObjects() {
 function updateScene() {
     audioManager.update(deltaTime, settings, energyOutput, paused, game.boomValue);
 
+    if (!Number.isFinite(settings.collisionProbability) || settings.collisionProbability <= 0) {
+        settings.collisionProbability = defaultSettings.collisionProbability;
+    }
+
     // Update neutrons in GPU
     neutron.update(glShit.simGL);
     reportSystem.process(glShit.simGL);
     let totalHeat = 0;
     uraniumAtoms.forEach(s => {
         s.update();
-        if (s.hasAtom) totalHeat += s.heat;
     });
-    window.avgTemp = uraniumAtoms.length > 0 ? totalHeat / uraniumAtoms.length : 0;
-    controlRods.forEach(rod => rod.update());
-    if (plutonium) plutonium.update();
-    if (californium) californium.update();
+        waterCells.forEach(cell => {
+        totalHeat += cell.temperature;
+    });
+        window.avgTemp = waterCells.length > 0 ? totalHeat / waterCells.length : 0;
+
+    controlRods.forEach((rod, index) => {
+        if (typeof isControlRodActive === 'function' && !isControlRodActive(index)) return;
+        rod.update();
+    });
+    const plutoniumUnlocked = !(window.tutorialManager && typeof window.tutorialManager.isItemUnlocked === 'function')
+        || window.tutorialManager.isItemUnlocked('plutonium');
+    if (plutoniumUnlocked && plutonium) plutonium.update();
+    const californiumUnlocked = !(window.tutorialManager && typeof window.tutorialManager.isItemUnlocked === 'function')
+        || window.tutorialManager.isItemUnlocked('californium');
+    if (californiumUnlocked && californium) californium.update();
 
     energyThisFrame = waterSystem.update(deltaTime, settings);
 
@@ -227,10 +247,12 @@ function updateScene() {
 
 function drawScene() {
     const gl = glShit.waterGL; // They are all the same now
+    const scramCompleted = !(window.tutorialManager && typeof window.tutorialManager.hasCompleted === 'function')
+        || window.tutorialManager.hasCompleted('scram_pressed_once');
 
     // 1. Generate Light Map from Neutrons
     const vidSettings = ui.canvas.uiSettings.video;
-    const lightingEnabled = !!vidSettings.lighting;
+    const lightingEnabled = !!vidSettings.lighting && scramCompleted;
     if (lightingEnabled) {
         neutron.drawLightPass(gl);
         glShit.lightingPrev = true;
@@ -263,22 +285,36 @@ function drawScene() {
     const simW = screenSimWidth;
     const simH = screenHeight;
 
-    if (vidSettings.waterEffect) {
+    if (scramCompleted && vidSettings.waterEffect) {
         gl.viewport(simX, 0, simW, simH);
         gl.disable(gl.BLEND);
         renderWaterLayer();
     }
     
-    gl.viewport(simX, 0, simW, simH);
-    renderAtomCoreLayer();
+    const showUraniumLayer = scramCompleted && (
+        !(window.tutorialManager && typeof window.tutorialManager.shouldRenderLayer === 'function')
+        || window.tutorialManager.shouldRenderLayer('uranium')
+    );
+    if (showUraniumLayer) {
+        gl.viewport(simX, 0, simW, simH);
+        renderAtomCoreLayer();
+    }
 
-    gl.viewport(simX, 0, simW, simH);
-    renderSpecialLayer();
+    if (scramCompleted) {
+        gl.viewport(simX, 0, simW, simH);
+        renderSpecialLayer();
+    }
 
-    gl.viewport(simX, 0, simW, simH);
-    renderRodsLayer();
+    const showRodLayer = scramCompleted && (
+        !(window.tutorialManager && typeof window.tutorialManager.shouldRenderLayer === 'function')
+        || window.tutorialManager.shouldRenderLayer('rods')
+    );
+    if (showRodLayer) {
+        gl.viewport(simX, 0, simW, simH);
+        renderRodsLayer();
+    }
 
-    if (vidSettings.bubbles) {
+    if (scramCompleted && vidSettings.bubbles) {
         gl.viewport(simX, 0, simW, simH);
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -286,19 +322,21 @@ function drawScene() {
     }
 
 
-    if (vidSettings.steam) {
+    if (scramCompleted && vidSettings.steam) {
         gl.viewport(simX, 0, simW, simH);
         renderSteamLayer();
     }
 
-    if (vidSettings.atomGlow) {
+    if (scramCompleted && vidSettings.atomGlow && showUraniumLayer) {
         gl.viewport(simX, 0, simW, simH);
         gl.blendFunc(gl.ONE, gl.ONE);
         renderAtomGlowLayer();
     }
 
-    const showNeutrons = vidSettings.neutrons && vidSettings.neutrons.enabled;
-    if (showNeutrons) {
+    const showNeutrons = scramCompleted && vidSettings.neutrons && vidSettings.neutrons.enabled;
+    const showNeutronLayer = !(window.tutorialManager && typeof window.tutorialManager.shouldRenderLayer === 'function')
+        || window.tutorialManager.shouldRenderLayer('neutrons');
+    if (showNeutrons && showNeutronLayer) {
         gl.viewport(simX, 0, simW, simH);
         renderNeutronLayer();
     }
@@ -358,8 +396,12 @@ function renderBubblesLayer() {
 
 function renderSpecialLayer() {
     const items = [];
-    if (plutonium) items.push(plutonium);
-    if (californium) items.push(californium);
+    const plutoniumUnlocked = !(window.tutorialManager && typeof window.tutorialManager.isItemUnlocked === 'function')
+        || window.tutorialManager.isItemUnlocked('plutonium');
+    if (plutoniumUnlocked && plutonium) items.push(plutonium);
+    const californiumUnlocked = !(window.tutorialManager && typeof window.tutorialManager.isItemUnlocked === 'function')
+        || window.tutorialManager.isItemUnlocked('californium');
+    if (californiumUnlocked && californium) items.push(californium);
     const activeCount = specialRenderer.updateInstances(items);
     specialRenderer.draw(activeCount, { blendMode: 'alpha' });
 }
