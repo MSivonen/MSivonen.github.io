@@ -9,6 +9,8 @@ class TutorialManager {
         this.buttonRect = null;
         this.firstPowerTutorialAt = null;
         this.plutoniumIntroAt = null;
+        this.plutoniumScheduledAt = Infinity;
+        this.neutronScheduledAt = Infinity;
         this.endlessLoopStart = 6;
         this.lastKnownLoop = 1;
 
@@ -16,10 +18,10 @@ class TutorialManager {
         this.itemUnlocks = {
             atom: true,
             group: true,
-            controlRod: true,
+            moderator: true,
             waterFlow: true,
             californium: true,
-            plutonium: true
+            plutonium: false
         };
     }
 
@@ -46,10 +48,10 @@ class TutorialManager {
         this.itemUnlocks = {
             atom: loadedItemUnlocks && typeof loadedItemUnlocks.atom === 'boolean' ? loadedItemUnlocks.atom : defaultUnlocked,
             group: loadedItemUnlocks && typeof loadedItemUnlocks.group === 'boolean' ? loadedItemUnlocks.group : defaultUnlocked,
-            controlRod: loadedItemUnlocks && typeof loadedItemUnlocks.controlRod === 'boolean' ? loadedItemUnlocks.controlRod : defaultUnlocked,
+            moderator: loadedItemUnlocks && typeof loadedItemUnlocks.moderator === 'boolean' ? loadedItemUnlocks.moderator : defaultUnlocked,
             waterFlow: loadedItemUnlocks && typeof loadedItemUnlocks.waterFlow === 'boolean' ? loadedItemUnlocks.waterFlow : defaultUnlocked,
             californium: loadedItemUnlocks && typeof loadedItemUnlocks.californium === 'boolean' ? loadedItemUnlocks.californium : defaultUnlocked,
-            plutonium: loadedItemUnlocks && typeof loadedItemUnlocks.plutonium === 'boolean' ? loadedItemUnlocks.plutonium : defaultUnlocked
+            plutonium: loadedItemUnlocks && typeof loadedItemUnlocks.plutonium === 'boolean' ? loadedItemUnlocks.plutonium : false
         };
 
         this.firstPowerTutorialAt = Number.isFinite(saveData && saveData.tutorialFirstPowerAt) ? saveData.tutorialFirstPowerAt : null;
@@ -84,6 +86,8 @@ class TutorialManager {
         this.activeStep = null;
         this.buttonRect = null;
         this.plutoniumIntroAt = null;
+        this.plutoniumScheduledAt = Infinity;
+        this.neutronScheduledAt = Infinity;
         this.setUiInteractivityForTutorial(false);
     }
 
@@ -284,6 +288,21 @@ class TutorialManager {
             options.onComplete();
         }
 
+        // Schedule chained tutorial timings when a sequence is finished
+        try {
+            const finishedIds = Array.isArray(completionIds) && completionIds.length > 0 ? completionIds : [id];
+            // scram -> plutonium after 30s
+            if (finishedIds.includes('scram_intro')) {
+                this.plutoniumScheduledAt = Number.isFinite(renderTime) ? (renderTime + 30) : Infinity;
+            }
+            // plutonium -> neutron after 10s
+            if (finishedIds.includes('plutonium_intro')) {
+                this.neutronScheduledAt = Number.isFinite(renderTime) ? (renderTime + 10) : Infinity;
+            }
+        } catch (e) {
+            // renderTime or other globals may be undefined in some contexts; fail silently
+        }
+
         this.activeSequence = null;
         this.activeStep = null;
         this.activeStepIndex = -1;
@@ -334,13 +353,15 @@ class TutorialManager {
         }
     }
 
-    onControlRodDragged() {
+    onModeratorDragged() {
         if (!this.isEnabled) return;
         if (!this.hasCompleted('scram_pressed_once')) return;
-        if (!this.hasCompleted('shop_control_rod_purchase')) {
-            this.showTutorial('shop_control_rod_purchase');
+        if (!this.hasCompleted('shop_moderator_purchase')) {
+            this.showTutorial('shop_moderator_purchase');
         }
     }
+
+    // (legacy wrapper removed)
 
     onSecondTick() {
         if (!this.isEnabled && typeof gameState !== 'undefined' && gameState === 'PLAYING') {
@@ -365,7 +386,7 @@ class TutorialManager {
             }
         }
 
-        if (!this.isItemUnlocked('plutonium') && typeof renderTime === 'number' && renderTime >= 30) this.setItemUnlocked('plutonium', true);
+        if (!this.isItemUnlocked('plutonium') && Number.isFinite(this.plutoniumScheduledAt) && Number.isFinite(renderTime) && renderTime >= this.plutoniumScheduledAt) this.setItemUnlocked('plutonium', true);
         if (!this.isItemUnlocked('atom') && currentLoop >= 2) {
             this.setItemUnlocked('atom', true);
             if (!this.hasCompleted('unlock_atom')) {
@@ -377,9 +398,9 @@ class TutorialManager {
         }
         if (!this.isItemUnlocked('group') && currentLoop >= 3) this.setItemUnlocked('group', true);
         if (!this.isItemUnlocked('waterFlow') && currentLoop >= 3) this.setItemUnlocked('waterFlow', true);
-        if (!this.isItemUnlocked('controlRod') && currentLoop >= 4) this.setItemUnlocked('controlRod', true);
+        if (!this.isItemUnlocked('moderator') && currentLoop >= 4) this.setItemUnlocked('moderator', true);
 
-        if (this.hasCompleted('scram_intro') && !this.hasCompleted('plutonium_intro') && typeof renderTime === 'number' && renderTime >= 30) {
+        if (this.hasCompleted('scram_intro') && !this.hasCompleted('plutonium_intro') && Number.isFinite(this.plutoniumScheduledAt) && Number.isFinite(renderTime) && renderTime >= this.plutoniumScheduledAt) {
             if (!this.isItemUnlocked('plutonium')) {
                 this.setItemUnlocked('plutonium', true);
             }
@@ -388,10 +409,6 @@ class TutorialManager {
                     this.plutoniumIntroAt = Number.isFinite(renderTime) ? renderTime : 0;
                 }
             });
-        }
-
-        if (this.hasCompleted('plutonium_intro') && this.plutoniumIntroAt === null && Number.isFinite(renderTime)) {
-            this.plutoniumIntroAt = renderTime;
         }
 
         const avgTempValue = Number.isFinite(window.avgTemp) ? window.avgTemp : 0;
@@ -403,14 +420,8 @@ class TutorialManager {
             this.showTutorial(['first_power_output', 'income_intro']);
         }
 
-        if (!this.hasCompleted('neutron_intro')) {
-            const introAt = Number.isFinite(this.plutoniumIntroAt) ? this.plutoniumIntroAt : null;
-            const shouldShowNeutron = introAt !== null
-                && Number.isFinite(renderTime)
-                && renderTime >= (introAt + 10);
-            if (shouldShowNeutron) {
-                this.notifyNeutronTutorial();
-            }
+        if (!this.hasCompleted('neutron_intro') && Number.isFinite(this.neutronScheduledAt) && Number.isFinite(renderTime) && renderTime >= this.neutronScheduledAt) {
+            this.notifyNeutronTutorial();
         }
 
         if (!this.hasCompleted('first_prestige_available')) {
@@ -440,12 +451,12 @@ class TutorialManager {
         const money = (typeof player !== 'undefined' && player && typeof player.getBalance === 'function') ? player.getBalance() : 0;
 
         if (!this.shopUnlocked && money >= 5) this.setShopUnlocked(true);
-        if (!this.isItemUnlocked('plutonium') && typeof renderTime === 'number' && renderTime >= 30) this.setItemUnlocked('plutonium', true);
+        if (!this.isItemUnlocked('plutonium') && Number.isFinite(this.plutoniumScheduledAt) && Number.isFinite(renderTime) && renderTime >= this.plutoniumScheduledAt) this.setItemUnlocked('plutonium', true);
         if (!this.isItemUnlocked('atom') && currentLoop >= 2) this.setItemUnlocked('atom', true);
         if (!this.isItemUnlocked('californium') && currentLoop >= 2) this.setItemUnlocked('californium', true);
         if (!this.isItemUnlocked('group') && currentLoop >= 3) this.setItemUnlocked('group', true);
         if (!this.isItemUnlocked('waterFlow') && currentLoop >= 3) this.setItemUnlocked('waterFlow', true);
-        if (!this.isItemUnlocked('controlRod') && currentLoop >= 4) this.setItemUnlocked('controlRod', true);
+        if (!this.isItemUnlocked('moderator') && currentLoop >= 4) this.setItemUnlocked('moderator', true);
     }
 
     notifyShopItem(itemName) {
@@ -458,8 +469,8 @@ class TutorialManager {
             this.showTutorial('shop_group_purchase');
         }
 
-        if (itemName === 'controlRod' && !this.hasCompleted('unlock_control_rod')) {
-            this.showTutorial('unlock_control_rod');
+        if (itemName === 'moderator' && !this.hasCompleted('unlock_moderator')) {
+            this.showTutorial('unlock_moderator');
         }
 
         if (itemName === 'waterFlow' && !this.hasCompleted('shop_water_flow_purchase')) {
@@ -523,22 +534,22 @@ class TutorialManager {
         ctx.textBaseline = 'top';
         ctx.fillText(title, boxX + 16 * globalScale, boxY + 14 * globalScale);
 
-        ctx.font = `${15 * globalScale}px UIFont1, sans-serif`;
+        ctx.font = `${14 * globalScale}px UIFont1, sans-serif`;
         ctx.fillStyle = 'rgba(245, 245, 245, 0.96)';
 
         const maxTextWidth = boxW - 32 * globalScale;
-        const lineHeight = 21 * globalScale;
+        const lineHeight = 20 * globalScale;
         const lines = this.wrapText(ctx, text, maxTextWidth);
         let textY = boxY + 52 * globalScale;
         for (const line of lines) {
-            ctx.fillText(line, boxX + 16 * globalScale, textY);
+            ctx.fillText(line, boxX + 15 * globalScale, textY);
             textY += lineHeight;
         }
 
         const isLastStep = this.activeSequence && this.activeStepIndex >= this.activeSequence.steps.length - 1;
         const btnLabel = isLastStep ? 'Close' : 'Next';
         const btnW = 108 * globalScale;
-        const btnH = 36 * globalScale;
+        const btnH = 32 * globalScale;
         const btnX = boxX + boxW - btnW - 14 * globalScale;
         const btnY = boxY + boxH - btnH - 12 * globalScale;
 
