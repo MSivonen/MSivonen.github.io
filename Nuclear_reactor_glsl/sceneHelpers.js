@@ -20,6 +20,8 @@ function initShadersAndGL() {
     glShit.coreCanvas = glShit.gameCanvas;
 
     gl.getExtension("EXT_color_buffer_float");
+    // Enable GPU water by default when supported
+    glShit.useGpuWater = true;
 
     waterLayer.init(gl, glShit.shaderCodes.waterVertCode, glShit.shaderCodes.waterFragCode);
 
@@ -29,7 +31,33 @@ function initShadersAndGL() {
     glShit.neutronLightProgram = createProgram(gl, glShit.shaderCodes.rendVertCode, glShit.shaderCodes.neutronLightFragCode);
     glShit.lightVectorProgram = createProgram(gl, glShit.shaderCodes.simVertCode, glShit.shaderCodes.lightVectorFragCode);
     glShit.specialLightProgram = createProgram(gl, glShit.shaderCodes.atomsVertCode, glShit.shaderCodes.specialLightFragCode);
+    // Thermal program for GPU diffusion
+    if (glShit.shaderCodes && glShit.shaderCodes.thermalFragCode) {
+        glShit.thermalProgram = createProgram(gl, glShit.shaderCodes.simVertCode, glShit.shaderCodes.thermalFragCode);
+    }
     glShit.uNeutronsLoc = gl.getUniformLocation(glShit.simProgram, "u_neutrons");
+
+    // Cache frequently-used uniform locations for the simulation shader to avoid
+    // repeated `gl.getUniformLocation` calls each frame (heavy in hot paths).
+    glShit.simUniforms = {
+        u_neutrons: gl.getUniformLocation(glShit.simProgram, "u_neutrons"),
+        u_moderators: gl.getUniformLocation(glShit.simProgram, "u_moderators"),
+        u_moderatorCount: gl.getUniformLocation(glShit.simProgram, "u_moderatorCount"),
+        u_atomMask: gl.getUniformLocation(glShit.simProgram, "u_atomMask"),
+        u_uraniumCountX: gl.getUniformLocation(glShit.simProgram, "u_uraniumCountX"),
+        u_uraniumCountY: gl.getUniformLocation(glShit.simProgram, "u_uraniumCountY"),
+        collision_prob: gl.getUniformLocation(glShit.simProgram, "collision_prob"),
+        moderatorHitProbability: gl.getUniformLocation(glShit.simProgram, "moderatorHitProbability"),
+        moderatorAbsorptionProbability: gl.getUniformLocation(glShit.simProgram, "moderatorAbsorptionProbability"),
+        u_simWidth: gl.getUniformLocation(glShit.simProgram, "u_simWidth"),
+        u_simHeight: gl.getUniformLocation(glShit.simProgram, "u_simHeight"),
+        u_moderatorHeight: gl.getUniformLocation(glShit.simProgram, "u_moderatorHeight"),
+        u_atomSpacingX: gl.getUniformLocation(glShit.simProgram, "u_atomSpacingX"),
+        u_atomSpacingY: gl.getUniformLocation(glShit.simProgram, "u_atomSpacingY"),
+        u_atomRadius: gl.getUniformLocation(glShit.simProgram, "u_atomRadius"),
+        u_globalScale: gl.getUniformLocation(glShit.simProgram, "u_globalScale"),
+        u_hitboxYScale: gl.getUniformLocation(glShit.simProgram, "u_hitboxYScale"),
+    };
 
     glShit.readTex = neutron.createTexture(gl, neutron.buffer);
     glShit.writeTex = neutron.createTexture(gl, null);
@@ -143,6 +171,11 @@ function initSimulationObjects() {
     }
     waterSystem = new WaterSystem();
     waterSystem.init(waterCells);
+    // Initialize GPU water system if available
+    if (glShit.useGpuWater && typeof GpuWaterSystem !== 'undefined' && glShit.thermalProgram) {
+        glShit.gpuWater = new GpuWaterSystem();
+        glShit.gpuWater.init(gl, uraniumAtomsCountX, uraniumAtomsCountY, waterSystem.temps);
+    }
 
     let groupIndex = 0;
     let colInGroup = 0;
@@ -183,6 +216,10 @@ function initSimulationObjects() {
 function initUiObjects() {
     ui.powerMeter = new PowerMeter(globalScale * 730, globalScale * 530);
     ui.tempMeter = new TempMeter(globalScale * 600, globalScale * 530);
+    // Visual-only water valve indicator (reflects settings.waterFlowSpeed)
+    if (typeof WaterValve !== 'undefined') {
+        ui.waterValve = new WaterValve(globalScale * 460, globalScale * 550, 36 * globalScale);
+    }
     ui.controlSlider = new ModeratorsSlider();
     ui.canvas = new UICanvas();
 
@@ -264,6 +301,23 @@ function finalizeSceneFrame() {
     ui.powerMeter.update();
     ui.tempMeter.update();
     oncePerSecond();
+
+    // Smooth actual water flow toward the target at 15% per second
+    try {
+        if (typeof settings !== 'undefined') {
+            if (typeof settings.waterFlowTarget === 'undefined') settings.waterFlowTarget = settings.waterFlowSpeed || 0;
+            if (typeof settings.waterFlowSpeed === 'undefined') settings.waterFlowSpeed = settings.waterFlowTarget || 0;
+            const dt = 1.0 / 60.0;
+            const rate = 0.15; // units per second (linear)
+            const maxDelta = rate * dt;
+            const diff = settings.waterFlowTarget - settings.waterFlowSpeed;
+            if (Math.abs(diff) <= maxDelta) {
+                settings.waterFlowSpeed = settings.waterFlowTarget;
+            } else {
+                settings.waterFlowSpeed += Math.sign(diff) * maxDelta;
+            }
+        }
+    } catch (e) { /* ignore */ }
 }
 
 function drawScene() {
